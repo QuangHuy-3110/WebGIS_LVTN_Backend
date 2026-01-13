@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/6.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
-
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -31,13 +31,23 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'corsheaders',
+    'django.contrib.gis',
+    'rest_framework',      # <--- BẠN ĐANG THIẾU DÒNG NÀY
+    'rest_framework_gis',  # Hỗ trợ bản đồ
+    'corsheaders',         # Hỗ trợ React gọi API
+    'django_filters',      # Hỗ trợ lọc
+    'leaflet',
+
+    'users',
+    'shops',
+    'social',
 ]
 
 MIDDLEWARE = [
@@ -76,11 +86,14 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.contrib.gis.db.backends.postgis', # Dùng engine này hỗ trợ bản đồ
+        'NAME': 'gisdb',
+        'USER': 'postgres',
+        'PASSWORD': '05112004',
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -116,5 +129,74 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATICFILES_DIRS = [BASE_DIR / "static"]
 CORS_ALLOW_ALL_ORIGINS = True # Chỉ dùng khi dev, production thì điền domain cụ thể
+
+AUTH_USER_MODEL = 'users.User'
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+# Cấu hình REST Framework
+REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10, # Mỗi trang trả về 10 kết quả (React sẽ làm nút "Load more")
+    'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
+
+# Cấu hình giao diện Jazzmin
+JAZZMIN_SETTINGS = {
+    # Tiêu đề trên tab trình duyệt
+    "site_title": "Hệ thống GIS Cần Thơ",
+    
+    # Tiêu đề ở màn hình đăng nhập
+    "site_header": "GIS Admin",
+    
+    # Logo thương hiệu (để file ảnh trong folder static)
+    # Nếu chưa có static file thì bỏ qua dòng này hoặc để None
+    "site_logo": None, 
+    
+    # Thông điệp chào mừng ở màn hình đăng nhập
+    "welcome_sign": "Chào mừng trở lại quản trị viên GIS",
+
+    # Copyright ở chân trang
+    "copyright": "Quang Huy GIS Project",
+
+    # Menu bên trái (Sidebar)
+    "search_model": ["users.User", "shops.Store"], # Thanh tìm kiếm nhanh
+
+    # Giao diện người dùng (Avatar menu)
+    "user_avatar": "avatar", # Field avatar trong bảng User của bạn
+
+    # Thay đổi Icon cho các mục (Dùng FontAwesome 5)
+    "icons": {
+        "auth": "fas fa-users-cog",
+        "users.User": "fas fa-user",
+        "shops.Store": "fas fa-store",
+        "shops.Category": "fas fa-list",
+        "social.Review": "fas fa-star",
+    },
+
+    "custom_css": "css/admin_fix.css",
+}
+
+# Tùy chỉnh giao diện (Màu sắc)
+JAZZMIN_UI_TWEAKS = {
+    "theme": "flatly",   # Có thể thử: darkly, slate, simplex, united
+    #"dark_mode_theme": "darkly", # Nếu muốn chế độ tối
+}
+
+LEAFLET_CONFIG = {
+    'DEFAULT_CENTER': (10.0452, 105.7469), # Tọa độ Cần Thơ
+    'DEFAULT_ZOOM': 12,
+    'MIN_ZOOM': 3,
+    'MAX_ZOOM': 18,
+    'SCALE': 'both',
+    'ATTRIBUTION_PREFIX': 'Bản đồ Cần Thơ',
+}

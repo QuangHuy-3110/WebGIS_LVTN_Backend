@@ -1,0 +1,12 @@
+/* Ép bản đồ Leaflet không được vượt quá 100% chiều rộng của khung chứa */
+.leaflet-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 400px !important; /* Chiều cao cố định cho đẹp */
+    z-index: 1; /* Đảm bảo không bị các menu khác đè lên */
+}
+
+/* Sửa lỗi hiển thị trên màn hình nhỏ (nếu có) */
+.field-location {
+    width: 100%;
+}
