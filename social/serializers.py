@@ -21,13 +21,15 @@ class ReviewSerializer(serializers.ModelSerializer):
 
 class FavoriteSerializer(serializers.ModelSerializer):
     # Hiển thị thêm tên quán để khi xem danh sách yêu thích sẽ dễ nhìn hơn
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
+
     store_name = serializers.CharField(source='store.name', read_only=True)
     store_address = serializers.CharField(source='store.address', read_only=True)
 
     class Meta:
         model = Favorite
         fields = ['id', 'user', 'store', 'store_name', 'store_address']
-        read_only_fields = ['user']
+        # read_only_fields = ['user']
 
         # Validator này giúp trả về lỗi rõ ràng nếu user thích 1 quán 2 lần
         validators = [

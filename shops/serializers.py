@@ -10,18 +10,43 @@ class CategorySerializer(serializers.ModelSerializer):
 
 # 2. Store Image Serializer
 class StoreImageSerializer(serializers.ModelSerializer):
-    # Model dùng 'describe', không phải 'caption' nên cần sửa lại cho khớp
+    store = serializers.PrimaryKeyRelatedField(queryset=Store.objects.all())
+    
+    # 1. Khai báo trường này
+    uploaded_by_name = serializers.ReadOnlyField(source='uploaded_by.username')
+    state = serializers.CharField(required=False, default='private')
+
     class Meta:
         model = StoreImage
-        fields = ['id', 'image', 'describe', 'uploaded_by', 'state', 'time_up']
+        read_only_fields = ['time_up']
+        
+        # 2. QUAN TRỌNG: Phải thêm 'uploaded_by_name' vào danh sách này
+        fields = [
+            'id', 
+            'store', 
+            'image', 
+            'describe', 
+            'uploaded_by', 
+            'uploaded_by_name',  # <--- THÊM DÒNG NÀY
+            'state', 
+            'time_up'
+        ]
 
-# 3. Store Serializer (GeoJSON)
+        read_only_fields = ['time_up', 'uploaded_by', 'state', 'uploaded_by_name']
+
+# 3. Store Serializer (GeoJSON) - ĐÃ SỬA
 class StoreSerializer(GeoFeatureModelSerializer):
     category_detail = CategorySerializer(source='category', read_only=True)
     
-    # Quan trọng: Trong Model StoreImage bạn đặt related_name="image" (số ít)
-    # nên ở đây phải khai báo source='image' để Django hiểu.
-    images = StoreImageSerializer(many=True, read_only=True, source='image')
+    # --- SỬA 1: Dùng MethodField để lọc ảnh Public ---
+    # Thay vì: images = StoreImageSerializer(many=True, read_only=True, source='image')
+    images = serializers.SerializerMethodField()
+    # -------------------------------------------------
+
+    # --- SỬA 2: Fix lỗi Timezone cho giờ mở cửa (Tránh lỗi 500) ---
+    open_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
+    close_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
+    # --------------------------------------------------------------
 
     class Meta:
         model = Store
@@ -29,41 +54,52 @@ class StoreSerializer(GeoFeatureModelSerializer):
             'id', 
             'name', 
             'address', 
-            'phone',       # Thêm field từ model
-            'email',       # Thêm field từ model
+            'phone', 
+            'email', 
             'category', 
             'category_detail', 
             'rating_avg', 
-            'rating_count', # Thêm field từ model
+            'rating_count', 
             'open_time', 
             'close_time', 
             'state', 
-            'describe',    # Thêm field từ model
+            'describe', 
             'location', 
-            'images'
+            'images',
         ]
         geo_field = 'location'
+        read_only_fields = ['rating_avg', 'rating_count', 'state', 'is_active']
 
-# 4. Approval Profile Serializer (Mới)
+    # --- HÀM LỌC ẢNH ---
+    def get_images(self, obj):
+        # Lưu ý: Do bạn đặt related_name='image' (số ít) trong models.py
+        # Nên ở đây ta gọi là obj.image (thay vì obj.storeimage_set)
+        
+        # Chỉ lấy ảnh có state='public'
+        public_images = obj.image.filter(state='public')
+        
+        return StoreImageSerializer(public_images, many=True, context=self.context).data
+    # -------------------
+
+# 4. Approval Profile Serializer
 class ApprovalProfileSerializer(serializers.ModelSerializer):
-    # Hiển thị thêm tên để Frontend dễ hiển thị thay vì chỉ hiện ID
     store_name = serializers.CharField(source='store.name', read_only=True)
-    submitter_name = serializers.CharField(source='submitter.username', read_only=True)
     approver_name = serializers.CharField(source='approver.username', read_only=True)
-
+    submitter_name = serializers.ReadOnlyField(source='submitter.username')
+    
     class Meta:
         model = ApprovalProfile
         fields = [
             'id', 
             'store', 
-            'store_name',      # Field đọc thêm
+            'store_name', 
             'submitter', 
-            'submitter_name',  # Field đọc thêm
+            'submitter_name', 
             'approver', 
-            'approver_name',   # Field đọc thêm
+            'approver_name', 
             'status', 
             'date_up', 
             'date_sign', 
             'note'
         ]
-        read_only_fields = ['date_up', 'date_sign']
+        read_only_fields = ['submitter', 'approver', 'status', 'date_up']

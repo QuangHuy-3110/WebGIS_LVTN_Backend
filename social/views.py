@@ -41,7 +41,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
 class FavoriteViewSet(viewsets.ModelViewSet):
     serializer_class = FavoriteSerializer
     permission_classes = [permissions.IsAuthenticated] # Bắt buộc phải đăng nhập
-    
+    queryset = Favorite.objects.all().order_by('-id')
     # Chỉ cho phép: Xem, Thêm, Xóa (Không cho sửa - PUT/PATCH vì không cần thiết)
     http_method_names = ['get', 'post', 'delete', 'head']
 
@@ -51,6 +51,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         # Chỉ trả về danh sách yêu thích CỦA NGƯỜI DÙNG ĐANG ĐĂNG NHẬP
         # Người dùng A không nên thấy danh sách yêu thích của người dùng B
+        # return Favorite.objects.filter(user=self.request.user).order_by('-id')
         return Favorite.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):

@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.contrib.auth.password_validation import validate_password
 from .models import User, SearchHistory
+from django.contrib.auth import get_user_model
 
 # 1. CUSTOM JWT SERIALIZER
 # Dùng để login, trả về token kèm theo thông tin user
@@ -53,3 +55,21 @@ class SearchHistorySerializer(serializers.ModelSerializer):
         model = SearchHistory
         fields = ['id', 'user', 'keyword', 'search_location', 'create_at']
         read_only_fields = ['user', 'create_at']
+
+User = get_user_model()
+
+# Serializer cập nhật thông tin (Avatar, Tên, Phone...)
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'phone', 'avatar', 'email']
+        read_only_fields = ['email'] # Email thường không cho sửa
+
+# Serializer đổi mật khẩu
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True)
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value

@@ -1,7 +1,9 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, generics,permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser # Để upload avatar
+from .serializers import UserUpdateSerializer, ChangePasswordSerializer
+from django.contrib.auth import get_user_model
 
 from .models import User, SearchHistory
 from .serializers import UserSerializer, SearchHistorySerializer
@@ -41,3 +43,33 @@ class SearchHistoryViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Tự động gán user hiện tại vào bản ghi lịch sử
         serializer.save(user=self.request.user)
+
+User = get_user_model()
+
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    queryset = User.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = UserUpdateSerializer
+
+    def get_object(self):
+        return self.request.user
+
+class ChangePasswordView(generics.UpdateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ChangePasswordSerializer
+
+    def update(self, request, *args, **kwargs):
+        user = self.request.user
+        serializer = self.get_serializer(data=request.data)
+
+        if serializer.is_valid():
+            # Check password cũ
+            if not user.check_password(serializer.data.get("old_password")):
+                return Response({"old_password": ["Mật khẩu cũ không đúng."]}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Set password mới
+            user.set_password(serializer.data.get("new_password"))
+            user.save()
+            return Response({"message": "Đổi mật khẩu thành công!"}, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
