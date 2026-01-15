@@ -52,7 +52,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
         # Chỉ trả về danh sách yêu thích CỦA NGƯỜI DÙNG ĐANG ĐĂNG NHẬP
         # Người dùng A không nên thấy danh sách yêu thích của người dùng B
         # return Favorite.objects.filter(user=self.request.user).order_by('-id')
-        return Favorite.objects.filter(user=self.request.user)
+        return Favorite.objects.filter(user=self.request.user).order_by('-id')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

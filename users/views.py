@@ -1,7 +1,7 @@
 from rest_framework import viewsets, generics,permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser # Để upload avatar
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .serializers import UserUpdateSerializer, ChangePasswordSerializer
 from django.contrib.auth import get_user_model
 
@@ -11,7 +11,7 @@ from .serializers import UserSerializer, SearchHistorySerializer
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.filter(is_active=True)
     serializer_class = UserSerializer
-    parser_classes = [MultiPartParser, FormParser] # Hỗ trợ upload ảnh avatar
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get_permissions(self):
         # Cho phép bất kỳ ai cũng có thể Đăng ký (POST)
@@ -50,10 +50,12 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
     queryset = User.objects.all()
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = UserUpdateSerializer
+    # THÊM DÒNG NÀY ĐỂ HỖ TRỢ UPLOAD ẢNH
+    parser_classes = [MultiPartParser, FormParser] 
 
     def get_object(self):
         return self.request.user
-
+    
 class ChangePasswordView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = ChangePasswordSerializer

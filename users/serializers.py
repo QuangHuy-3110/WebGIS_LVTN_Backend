@@ -16,6 +16,11 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['full_name'] = self.user.full_name
         data['role'] = self.user.role      # Quan trọng để phân quyền ở frontend
         data['is_staff'] = self.user.is_staff 
+
+        data['first_name'] = self.user.first_name
+        data['last_name'] = self.user.last_name
+        data['email'] = self.user.email
+        data['phone'] = self.user.phone
         
         # Trả về URL avatar nếu có
         if self.user.avatar:
@@ -33,7 +38,8 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'password', 'first_name', 'last_name', 'full_name', 'email', 'phone', 'role', 'avatar']
         extra_kwargs = {
             'password': {'write_only': True}, # Chỉ cho phép ghi (đăng ký), không trả về khi xem
-            'avatar': {'read_only': True},    # Avatar nên upload qua API riêng hoặc form-data
+            # 'avatar': {'read_only': True},    # Avatar nên upload qua API riêng hoặc form-data
+            'avatar': {'required': False},
         }
 
     def create(self, validated_data):

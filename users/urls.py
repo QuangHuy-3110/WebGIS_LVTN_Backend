@@ -22,6 +22,12 @@ router.register(r'search-history', views.SearchHistoryViewSet, basename='search-
 urlpatterns = [
     # Include các URL do router tạo ra (CRUD user, history)
     path('', include(router.urls)),
+
+    # API Cập nhật thông tin cá nhân (Avatar, tên...)
+    path('profile/update/', views.UserProfileView.as_view(), name='profile-update'),
+    
+    # API Đổi mật khẩu
+    path('profile/change-password/', views.ChangePasswordView.as_view(), name='change-password'),
     
     # --- API XÁC THỰC (AUTH) ---
     # Login: Trả về Access Token + Refresh Token + Info User
