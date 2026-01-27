@@ -21,6 +21,7 @@ router.register(r'store-images', views.StoreImageViewSet, basename='store-image'
 router.register(r'approvals', views.ApprovalProfileViewSet, basename='approval')
 
 urlpatterns = [
+    path('utils/analyze-image/', views.AnalyzeImageView.as_view(), name='analyze-image'),
     # Include tất cả các đường dẫn do router tự sinh ra
     path('', include(router.urls)),
 ]

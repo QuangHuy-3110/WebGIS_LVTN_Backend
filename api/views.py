@@ -25,19 +25,16 @@ class RoutingView(APIView):
             # 2. Câu Query SQL tìm đường (QUAN TRỌNG: Dùng bảng _noded)
             query = """
             WITH 
-            -- A. Tìm nút (node) gần điểm ĐI nhất trong bảng vertices MỚI
             start_node AS (
                 SELECT id FROM planet_osm_line_noded_vertices_pgr
                 ORDER BY the_geom <-> ST_Transform(ST_SetSRID(ST_MakePoint(%s, %s), 4326), 3857) 
                 LIMIT 1
             ),
-            -- B. Tìm nút (node) gần điểm ĐẾN nhất
             end_node AS (
                 SELECT id FROM planet_osm_line_noded_vertices_pgr
                 ORDER BY the_geom <-> ST_Transform(ST_SetSRID(ST_MakePoint(%s, %s), 4326), 3857) 
                 LIMIT 1
             )
-            -- C. Chạy thuật toán và trả về GeoJSON
             SELECT 
                 json_build_object(
                     'type', 'FeatureCollection',
@@ -45,17 +42,16 @@ class RoutingView(APIView):
                         json_build_object(
                             'type', 'Feature',
                             'geometry', ST_AsGeoJSON(ST_Transform(b.geom, 4326))::json,
-                            'properties', json_build_object('name', c.name) 
+                            'properties', json_build_object('name', c.name)
                         )
                     )
                 ) as geojson
             FROM pgr_dijkstra(
-                -- 1. THÊM reverse_cost VÀO ĐÂY
+                -- 1. THÊM reverse_cost VÀO CÂU SELECT
                 'SELECT id, source, target, length as cost, reverse_cost FROM planet_osm_line_noded',
                 (SELECT id FROM start_node),
                 (SELECT id FROM end_node),
-                -- 2. BẬT CHẾ ĐỘ CÓ HƯỚNG (DIRECTED = TRUE)
-                directed := true 
+                directed := true  -- 2. BẬT CHẾ ĐỘ CÓ HƯỚNG (QUAN TRỌNG)
             ) a
             JOIN planet_osm_line_noded b ON a.edge = b.id
             LEFT JOIN planet_osm_line c ON b.old_id = c.osm_id;

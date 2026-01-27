@@ -8,24 +8,24 @@ from .models import User, SearchHistory
 # Phải kế thừa UserAdmin để giữ các tính năng đổi mật khẩu, phân quyền gốc của Django
 class CustomUserAdmin(UserAdmin):
     # Các cột hiển thị ở danh sách user bên ngoài
-    list_display = ('username', 'email', 'full_name', 'phone', 'role', 'is_staff')
+    list_display = ('username', 'email', 'phone', 'role', 'is_staff')
     
     # Bộ lọc và tìm kiếm
     list_filter = ('role', 'is_staff', 'is_active')
-    search_fields = ('username', 'full_name', 'phone', 'email')
+    search_fields = ('username', 'phone', 'email')
     
     # Cấu hình FORM CHỈNH SỬA (Edit)
     # Thêm các field mới (phone, role, avatar...) vào form
     fieldsets = UserAdmin.fieldsets + (
-        ('Thông tin bổ sung', {
-            'fields': ('phone', 'role', 'full_name', 'avatar', 'avatar_preview')
+        ('Information add-on', {
+            'fields': ('phone', 'role', 'avatar', 'avatar_preview')
         }),
     )
     
     # Cấu hình FORM TẠO MỚI (Add)
     add_fieldsets = UserAdmin.add_fieldsets + (
-        ('Thông tin bổ sung', {
-            'fields': ('phone', 'role', 'full_name', 'avatar')
+        ('Information add-on', {
+            'fields': ('phone', 'role', 'avatar')
         }),
     )
     

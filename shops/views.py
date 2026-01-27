@@ -6,6 +6,8 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework_gis.filters import InBBoxFilter
+from rest_framework.views import APIView
+from .utils import extract_gps_data
 
 from .models import Store, Category, StoreImage, ApprovalProfile
 from .serializers import (
@@ -134,3 +136,28 @@ class ApprovalProfileViewSet(viewsets.ModelViewSet):
         profile.save()
         
         return Response({"message": "Đã từ chối hồ sơ."})
+    
+class AnalyzeImageView(APIView):
+    """
+    API hỗ trợ: Nhận file ảnh -> Trả về GPS và Địa chỉ.
+    Dùng để auto-fill form khi tạo cửa hàng mới.
+    """
+    parser_classes = [MultiPartParser, FormParser] # Để nhận được file upload
+    permission_classes = [permissions.AllowAny] # Hoặc IsAuthenticated tuỳ bạn
+
+    def post(self, request, format=None):
+        image_file = request.FILES.get('image')
+        
+        if not image_file:
+            return Response({"error": "Không tìm thấy file ảnh"}, status=400)
+
+        # Gọi hàm xử lý từ utils
+        result = extract_gps_data(image_file)
+
+        if result:
+            return Response(result, status=200)
+        else:
+            return Response(
+                {"warning": "Ảnh không có dữ liệu GPS hoặc lỗi xử lý"}, 
+                status=200
+            )

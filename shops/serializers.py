@@ -47,25 +47,17 @@ class StoreSerializer(GeoFeatureModelSerializer):
     open_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
     close_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
     # --------------------------------------------------------------
-
+    image = serializers.ImageField(write_only=True, required=False)
     class Meta:
         model = Store
         fields = [
-            'id', 
-            'name', 
-            'address', 
-            'phone', 
-            'email', 
-            'category', 
-            'category_detail', 
-            'rating_avg', 
-            'rating_count', 
-            'open_time', 
-            'close_time', 
-            'state', 
-            'describe', 
-            'location', 
-            'images',
+            'id', 'name', 'address', 'phone', 'email', 
+            'category', 'category_detail', 
+            'rating_avg', 'rating_count', 
+            'open_time', 'close_time', 
+            'state', 'describe', 'location', 
+            'images', # Đây là list ảnh hiển thị (read_only)
+            'image'   # Đây là file ảnh gửi lên (write_only)
         ]
         geo_field = 'location'
         read_only_fields = ['rating_avg', 'rating_count', 'state', 'is_active']
@@ -80,6 +72,31 @@ class StoreSerializer(GeoFeatureModelSerializer):
         
         return StoreImageSerializer(public_images, many=True, context=self.context).data
     # -------------------
+
+    def create(self, validated_data):
+        # Tách dữ liệu ảnh ra khỏi dữ liệu cửa hàng
+        image_data = validated_data.pop('image', None)
+        
+        # Tạo cửa hàng trước
+        store = Store.objects.create(**validated_data)
+        
+        # Nếu có gửi kèm ảnh thì tạo luôn StoreImage
+        if image_data:
+            from .models import StoreImage # Import ở đây để tránh lỗi vòng lặp
+            
+            # Lấy user đang đăng nhập (được truyền từ views)
+            request = self.context.get('request')
+            user = request.user if request else None
+
+            # Lưu ảnh vào database
+            StoreImage.objects.create(
+                store=store,
+                image=image_data,
+                uploaded_by=user,
+                state='private' # Hoặc 'public' tuỳ logic của bạn
+            )
+            
+        return store
 
 # 4. Approval Profile Serializer
 class ApprovalProfileSerializer(serializers.ModelSerializer):
