@@ -1,144 +1,156 @@
 /* static/js/admin_auto_gps.js */
 
-var globalLeafletMap = null;
-var currentMarker = null; // Biến lưu marker hiện tại để quản lý kéo thả
+// 1. BIẾN TOÀN CỤC (Để tránh lỗi ReferenceError)
+window.globalLeafletMap = null;
+window.currentMarker = null;
 
-// 1. Bắt sự kiện map:init (Khắc phục lỗi không tìm thấy bản đồ)
+// Hàm cập nhật tọa độ vào ô input ẩn của GeoDjango
+window.updateLocationInput = function(lat, lng) {
+    var locationInput = document.querySelector('#id_location');
+    if (locationInput) {
+        // Định dạng WKT: SRID=4326;POINT(Longitude Latitude)
+        locationInput.value = `SRID=4326;POINT(${lng} ${lat})`;
+        console.log("📍 Đã cập nhật input tọa độ:", lat, lng);
+    }
+}
+
+// Hàm setup marker (cho phép kéo thả)
+window.setupExistingMarker = function(map) {
+    if (!map) return;
+    map.eachLayer(layer => {
+        if (layer instanceof L.Marker) {
+            window.currentMarker = layer;
+            if (window.currentMarker.dragging) {
+                window.currentMarker.dragging.enable();
+                window.currentMarker.on('dragend', function(e) {
+                     var pos = e.target.getLatLng();
+                     window.updateLocationInput(pos.lat, pos.lng);
+                });
+            }
+        }
+    });
+}
+
+// Hàm vẽ marker mới khi có tọa độ từ ảnh
+window.updateMapMarker = function(lat, lng) {
+    if (!window.globalLeafletMap) return;
+    const latlng = [lat, lng];
+
+    if (window.currentMarker) window.globalLeafletMap.removeLayer(window.currentMarker);
+    
+    // Xóa marker cũ do widget tạo ra (nếu có)
+    window.globalLeafletMap.eachLayer(layer => {
+        if (layer instanceof L.Marker) window.globalLeafletMap.removeLayer(layer);
+    });
+
+    window.currentMarker = L.marker(latlng, { draggable: true }).addTo(window.globalLeafletMap);
+    
+    // Bắt sự kiện kéo thả marker để chỉnh lại vị trí
+    window.currentMarker.on('dragend', function(event) {
+        var position = event.target.getLatLng();
+        window.updateLocationInput(position.lat, position.lng);
+    });
+
+    window.globalLeafletMap.flyTo(latlng, 16);
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// 2. LẮNG NGHE SỰ KIỆN MAP (Bắt buộc để lấy đối tượng map)
 window.addEventListener("map:init", function (e) {
     var detail = e.detail;
+    // Kiểm tra xem đây có phải là map của field 'location' không
     if (detail.id.indexOf('location') !== -1) {
-        console.log("🗺️ Đã bắt được bản đồ Leaflet:", detail.id);
-        globalLeafletMap = detail.map;
-        
-        // Nếu bản đồ đã có sẵn điểm (khi sửa bài), ta làm cho nó draggable
-        setupExistingMarker();
+        console.log("🗺️ Map đã tải:", detail.id);
+        window.globalLeafletMap = detail.map;
+        window.setupExistingMarker(detail.map);
     }
 });
 
+// 3. XỬ LÝ UPLOAD ẢNH & ĐIỀN ID
 document.addEventListener("DOMContentLoaded", function () {
     const imageInput = document.querySelector('input[name="quick_image"]');
+    const idsInput = document.querySelector('input[name="uploaded_image_ids"]'); // Ô input ẩn chứa ID
     const addressInput = document.querySelector('#id_address');
-    const locationInput = document.querySelector('#id_location');
-
+    
+    // Mảng chứa các ID ảnh đã upload thành công
+    let uploadedIds = [];
+    // Mảng chứa file chờ upload (để xử lý tuần tự nếu cần)
+    
     if (imageInput) {
         imageInput.addEventListener('change', function (e) {
-            // 2. Chỉ lấy file đầu tiên để phân tích GPS
-            const files = e.target.files;
-            if (!files || files.length === 0) return;
-            
-            const firstFile = files[0]; // <--- CHỈ LẤY FILE ĐẦU TIÊN
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
 
-            // Kiểm tra map
-            if (!globalLeafletMap && window.id_location_map) {
-                 globalLeafletMap = window.id_location_map;
-            }
+            console.log(`🚀 Bắt đầu upload ${files.length} ảnh...`);
 
-            alert(`⏳ Đang lấy tọa độ từ ảnh đầu tiên: ${firstFile.name}...`);
+            // Upload từng file một
+            files.forEach((file, index) => {
+                uploadFileAndGetId(file, index === 0);
+            });
 
-            const formData = new FormData();
-            formData.append('image', firstFile);
+            // QUAN TRỌNG: Xóa file khỏi input để khi bấm Save không gửi file nặng lên nữa
+            // Chúng ta chỉ cần gửi ID của ảnh thôi
+            imageInput.value = ''; 
+        });
+    }
 
-            fetch('/api/utils/analyze-image/', {
-                method: 'POST',
-                body: formData,
-                headers: { 'X-CSRFToken': getCookie('csrftoken') }
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.latitude && data.longitude) {
+    function uploadFileAndGetId(file, isFirst) {
+        const formData = new FormData();
+        formData.append('image', file);
+
+        fetch('/api/utils/quick-upload/', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.id) {
+                console.log(`✅ Upload thành công: ID=${data.id}`);
+                
+                // 1. Thêm ID vào mảng
+                uploadedIds.push(data.id);
+                
+                // 2. Cập nhật chuỗi ID vào ô input ẩn (VD: "15,16,17")
+                if (idsInput) {
+                    idsInput.value = uploadedIds.join(',');
+                    console.log("📝 Cập nhật form ids:", idsInput.value);
+                }
+
+                // 3. Nếu là ảnh đầu tiên, lấy GPS để điền vào form
+                if (isFirst && data.latitude && data.longitude) {
+                    // Điền địa chỉ text
+                    if (addressInput && !addressInput.value) {
+                        addressInput.value = data.address || "";
+                    }
                     
-                    // Điền Text
-                    if (addressInput) addressInput.value = data.address || "";
+                    // Fallback map
+                    if (!window.globalLeafletMap && window.id_location_map) {
+                        window.globalLeafletMap = window.id_location_map;
+                    }
+
+                    // Điền tọa độ
+                    window.updateLocationInput(data.latitude, data.longitude);
+                    window.updateMapMarker(data.latitude, data.longitude);
                     
-                    // Cập nhật ô ẩn (Database)
-                    updateLocationInput(data.latitude, data.longitude);
-
-                    // Vẽ và bay tới điểm (Có tính năng kéo thả)
-                    updateMapMarker(data.latitude, data.longitude);
-
-                    alert(`✅ Đã cập nhật vị trí!\nBạn có thể KÉO THẢ chấm đỏ để chỉnh lại cho chính xác.`);
-                } else {
-                    alert("⚠️ Ảnh đầu tiên không có GPS. Hãy nhập tay hoặc chọn ảnh khác.");
-                }
-            })
-            .catch(err => console.error(err));
-        });
-    }
-
-    // --- HÀM VẼ MARKER CÓ TÍNH NĂNG DRAGGABLE ---
-    function updateMapMarker(lat, lng) {
-        if (!globalLeafletMap) return;
-
-        const latlng = [lat, lng];
-
-        // Xóa marker cũ nếu có
-        if (currentMarker) {
-            globalLeafletMap.removeLayer(currentMarker);
-        }
-        
-        // Xóa các marker mặc định của widget nếu có
-        globalLeafletMap.eachLayer(layer => {
-            if (layer instanceof L.Marker) globalLeafletMap.removeLayer(layer);
-        });
-
-        // 3. TẠO MARKER MỚI VỚI DRAGGABLE: TRUE
-        currentMarker = L.marker(latlng, {
-            draggable: true // <--- QUAN TRỌNG: Cho phép kéo
-        }).addTo(globalLeafletMap);
-
-        // 4. LẮNG NGHE SỰ KIỆN KÉO THẢ (DRAGEND)
-        currentMarker.on('dragend', function(event) {
-            var marker = event.target;
-            var position = marker.getLatLng();
-            
-            console.log("📍 Đã di chuyển marker tới:", position);
-            
-            // Cập nhật lại ô input ẩn để khi Save sẽ lấy tọa độ mới
-            updateLocationInput(position.lat, position.lng);
-        });
-
-        globalLeafletMap.flyTo(latlng, 16);
-    }
-
-    // Hàm cập nhật chuỗi WKT vào ô input ẩn của Django
-    function updateLocationInput(lat, lng) {
-        if (locationInput) {
-            // GeoDjango format: POINT(Longitude Latitude)
-            locationInput.value = `SRID=4326;POINT(${lng} ${lat})`;
-        }
-    }
-
-    // Hàm hỗ trợ setup marker cho bài viết đã có sẵn (Edit mode)
-    function setupExistingMarker() {
-        if (!globalLeafletMap) return;
-        // Tìm marker có sẵn
-        globalLeafletMap.eachLayer(layer => {
-            if (layer instanceof L.Marker) {
-                currentMarker = layer;
-                // Bật tính năng kéo thả cho marker cũ
-                if (currentMarker.dragging) {
-                    currentMarker.dragging.enable();
-                    currentMarker.on('dragend', function(e) {
-                         var pos = e.target.getLatLng();
-                         updateLocationInput(pos.lat, pos.lng);
-                    });
+                    alert("📍 Đã lấy được tọa độ từ ảnh! Bạn hãy điền nốt thông tin và bấm Save.");
                 }
             }
-        });
-    }
-
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
-        }
-        return cookieValue;
+        })
+        .catch(err => console.error("❌ Lỗi upload:", err));
     }
 });

@@ -1,2 +1,22 @@
 /stores
 /avatars
+
+# Bỏ qua file biên dịch Python
+__pycache__/
+*.pyc
+
+# Bỏ qua thư mục môi trường ảo (nếu có)
+venv/
+env/
+
+# Bỏ qua Database cục bộ
+db.sqlite3
+
+# Bỏ qua thư mục Media (Ảnh upload test)
+media/
+
+# Bỏ qua file biến môi trường (chứa mật khẩu)
+.env
+
+# Bỏ qua file hệ thống
+.DS_Store

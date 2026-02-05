@@ -1,74 +1,142 @@
-from django.db import connection
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
-import json
+from . import routing_utils  # Import file utils vừa tạo
 
 class RoutingView(APIView):
     """
-    API tìm đường nội bộ dùng PostGIS + pgRouting (Bảng đã Noding)
-    Input: ?start_lat=...&start_lng=...&end_lat=...&end_lng=...
+    API tìm đường dùng Python thuần (In-Memory + Virtual Nodes)
     """
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         try:
-            # 1. Lấy tọa độ từ URL
+            # 1. Lấy tọa độ và thuật toán
             start_lat = request.query_params.get('start_lat')
             start_lng = request.query_params.get('start_lng')
             end_lat = request.query_params.get('end_lat')
             end_lng = request.query_params.get('end_lng')
+            
+            # Lấy tham số thuật toán: 'dijkstra' (default) hoặc 'astar'
+            algo_type = request.query_params.get('algo', 'dijkstra') 
 
             if not all([start_lat, start_lng, end_lat, end_lng]):
                 return Response({"error": "Thiếu tọa độ"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 2. Câu Query SQL tìm đường (QUAN TRỌNG: Dùng bảng _noded)
-            query = """
-            WITH 
-            start_node AS (
-                SELECT id FROM planet_osm_line_noded_vertices_pgr
-                ORDER BY the_geom <-> ST_Transform(ST_SetSRID(ST_MakePoint(%s, %s), 4326), 3857) 
-                LIMIT 1
-            ),
-            end_node AS (
-                SELECT id FROM planet_osm_line_noded_vertices_pgr
-                ORDER BY the_geom <-> ST_Transform(ST_SetSRID(ST_MakePoint(%s, %s), 4326), 3857) 
-                LIMIT 1
-            )
-            SELECT 
-                json_build_object(
-                    'type', 'FeatureCollection',
-                    'features', json_agg(
-                        json_build_object(
-                            'type', 'Feature',
-                            'geometry', ST_AsGeoJSON(ST_Transform(b.geom, 4326))::json,
-                            'properties', json_build_object('name', c.name)
-                        )
-                    )
-                ) as geojson
-            FROM pgr_dijkstra(
-                -- 1. THÊM reverse_cost VÀO CÂU SELECT
-                'SELECT id, source, target, length as cost, reverse_cost FROM planet_osm_line_noded',
-                (SELECT id FROM start_node),
-                (SELECT id FROM end_node),
-                directed := true  -- 2. BẬT CHẾ ĐỘ CÓ HƯỚNG (QUAN TRỌNG)
-            ) a
-            JOIN planet_osm_line_noded b ON a.edge = b.id
-            LEFT JOIN planet_osm_line c ON b.old_id = c.osm_id;
-            """
+            start_coords = (float(start_lng), float(start_lat))
+            end_coords = (float(end_lng), float(end_lat))
 
-            # 3. Thực thi
-            with connection.cursor() as cursor:
-                # Lưu ý thứ tự: Lng trước, Lat sau
-                cursor.execute(query, [start_lng, start_lat, end_lng, end_lat])
-                row = cursor.fetchone()
+            bbox = (105.6717, 9.9679, 105.8697, 10.0708) 
+            
+            rows = routing_utils.fetch_graph_data(bbox)
+            
+            # --- UPDATE: Hứng thêm nodes_coords ---
+            graph, edges_info, nodes_coords = routing_utils.build_graph(rows)
+
+            # graph, edges_info, nodes_coords, idx = routing_utils.build_graph_with_index(rows)
+
+            if not graph: return Response({"error": "Lỗi dữ liệu"}, status=500)
+
+            start_res = routing_utils.find_nearest_edge_in_ram(start_coords[0], start_coords[1], edges_info)
+            end_res = routing_utils.find_nearest_edge_in_ram(end_coords[0], end_coords[1], edges_info)
+
+            # start_res = routing_utils.find_nearest_edge_rtree(start_coords[0], start_coords[1], edges_info, idx)
+            # end_res = routing_utils.find_nearest_edge_rtree(end_coords[0], end_coords[1], edges_info, idx)
+
+            if not start_res or not end_res:
+                return Response({"error": "Ngoài vùng bản đồ"}, status=400)
+
+            # --- Xử lý trùng cạnh (giữ nguyên logic cũ) ---
+            if start_res['edge_id'] == end_res['edge_id']:
+                # ... (Giữ nguyên đoạn code trả về đường thẳng nếu trùng cạnh) ...
+                # (Copy lại đoạn code xử lý trùng cạnh từ câu trả lời trước vào đây)
+                eid = start_res['edge_id']
+                geojson = {
+                    "type": "FeatureCollection",
+                    "features": [
+                        { "type": "Feature", "geometry": {"type": "LineString", "coordinates": [[start_coords[0], start_coords[1]], start_res['proj_point']]}, "properties": {"type": "virtual"} },
+                        { "type": "Feature", "geometry": {"type": "LineString", "coordinates": [start_res['proj_point'], end_res['proj_point']]}, "properties": {"edge_id": eid, "type": "road"} },
+                        { "type": "Feature", "geometry": {"type": "LineString", "coordinates": [end_res['proj_point'], [end_coords[0], end_coords[1]]]}, "properties": {"type": "virtual"} }
+                    ]
+                }
+                return Response(geojson, status=status.HTTP_200_OK)
+
+            # --- Thêm Node ảo (Truyền thêm nodes_coords) ---
+            START_ID = -1
+            END_ID = -2
+            
+            routing_utils.add_virtual_node(
+                graph, edges_info, nodes_coords, 
+                start_res['edge_id'], start_res['proj_point'], 
+                'start', START_ID, start_res['ratio']
+            )
+            
+            u_end, v_end = routing_utils.add_virtual_node(
+                graph, edges_info, nodes_coords, 
+                end_res['edge_id'], end_res['proj_point'],
+                'end', END_ID, end_res['ratio']
+            )
+
+            # --- LỰA CHỌN THUẬT TOÁN ---
+            print(f"Đang chạy thuật toán: {algo_type.upper()}")
+            
+            path_details = None
+            if algo_type == 'astar':
+                # A* cần thêm nodes_coords để tính khoảng cách
+                path_details = routing_utils.a_star_solver(graph, START_ID, END_ID, nodes_coords)
+            else:
+                # Dijkstra truyền thống
+                path_details = routing_utils.dijkstra_solver(graph, START_ID, END_ID)
+
+            # --- Tạo GeoJSON (Giữ nguyên logic cũ) ---
+            if path_details:
+                geojson = { "type": "FeatureCollection", "features": [] }
                 
-                if row and row[0]:
-                    return Response(row[0], status=status.HTTP_200_OK)
-                else:
-                    # Trường hợp không tìm thấy đường (ví dụ 2 điểm quá xa hoặc không kết nối)
-                    return Response({"type": "FeatureCollection", "features": []}, status=status.HTTP_200_OK)
+                # Connector đầu
+                geojson["features"].append({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": [[start_coords[0], start_coords[1]], start_res['proj_point']]},
+                    "properties": {"type": "virtual"}
+                })
+
+                # Đường chính
+                for i, (eid, target_node_id) in enumerate(path_details):
+                    original_geom = edges_info[eid]['geom']
+                    final_geom = original_geom 
+                    
+                    if i == 0: 
+                        u = edges_info[eid]['source']
+                        target_coords = original_geom['coordinates'][0] if u == target_node_id else original_geom['coordinates'][-1]
+                        final_geom = routing_utils.slice_geometry(original_geom, start_res['proj_point'], target_coords)
+
+                    elif i == len(path_details) - 1:
+                        _, prev_node_id = path_details[i-1]
+                        u_curr = edges_info[eid]['source']
+                        prev_node_coords = original_geom['coordinates'][0] if u_curr == prev_node_id else original_geom['coordinates'][-1]
+                        final_geom = routing_utils.slice_geometry(original_geom, end_res['proj_point'], prev_node_coords)
+
+                    geojson["features"].append({
+                        "type": "Feature",
+                        "geometry": final_geom,
+                        "properties": {"edge_id": eid, "type": "road"}
+                    })
+
+                # Connector cuối
+                geojson["features"].append({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": [end_res['proj_point'], [end_coords[0], end_coords[1]]]},
+                    "properties": {"type": "virtual"}
+                })
+                
+                # Cleanup (Thêm nodes_coords vào hàm cleanup)
+                routing_utils.cleanup_graph(graph, nodes_coords, START_ID, END_ID, [u_end, v_end])
+                
+                return Response(geojson, status=status.HTTP_200_OK)
+            
+            else:
+                routing_utils.cleanup_graph(graph, nodes_coords, START_ID, END_ID, [u_end, v_end])
+                return Response({"type": "FeatureCollection", "features": []}, status=200)
 
         except Exception as e:
-            print("Routing Error:", e)
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            print("Error:", e)
+            return Response({"error": str(e)}, status=500)
