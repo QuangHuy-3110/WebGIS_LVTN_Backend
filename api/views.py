@@ -2,6 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from . import routing_utils  # Import file utils vừa tạo
+from PIL import Image
+from PIL.ExifTags import TAGS, GPSTAGS
 
 class RoutingView(APIView):
     """
@@ -140,3 +142,75 @@ class RoutingView(APIView):
         except Exception as e:
             print("Error:", e)
             return Response({"error": str(e)}, status=500)
+
+
+def _dms_to_decimal(dms, ref):
+    """
+    Chuyển tọa độ DMS (Degrees, Minutes, Seconds) từ EXIF sang decimal degrees.
+    dms: tuple of 3 IFDRational values (degrees, minutes, seconds)
+    ref: 'N', 'S', 'E', 'W'
+    """
+    degrees = float(dms[0])
+    minutes = float(dms[1])
+    seconds = float(dms[2])
+    decimal = degrees + (minutes / 60.0) + (seconds / 3600.0)
+    if ref in ['S', 'W']:
+        decimal = -decimal
+    return decimal
+
+
+class ExtractGPSView(APIView):
+    """
+    API trích xuất tọa độ GPS từ EXIF của ảnh JPG/JPEG/PNG.
+    POST /api/extract-gps/
+    Body: multipart/form-data với field 'image'
+    Response: {"lat": float, "lng": float} hoặc {"error": "..."}
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        image_file = request.FILES.get('image')
+        if not image_file:
+            return Response({"error": "Vui lòng tải lên một file ảnh."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            img = Image.open(image_file)
+            exif_data = img._getexif()
+        except Exception:
+            return Response({"error": "Không thể đọc file ảnh. Hãy thử với file JPG/JPEG."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not exif_data:
+            return Response({"error": "Ảnh không có thông tin EXIF."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        # Tìm tag GPS IFD
+        gps_ifd = None
+        for tag_id, value in exif_data.items():
+            tag_name = TAGS.get(tag_id, tag_id)
+            if tag_name == 'GPSInfo':
+                gps_ifd = value
+                break
+
+        if not gps_ifd:
+            return Response({"error": "Ảnh không có thông tin GPS. Hãy chụp bằng điện thoại với định vị được bật."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        # Decode GPS tags
+        gps_info = {}
+        for key, val in gps_ifd.items():
+            decoded_key = GPSTAGS.get(key, key)
+            gps_info[decoded_key] = val
+
+        lat_dms  = gps_info.get('GPSLatitude')
+        lat_ref  = gps_info.get('GPSLatitudeRef')
+        lng_dms  = gps_info.get('GPSLongitude')
+        lng_ref  = gps_info.get('GPSLongitudeRef')
+
+        if not all([lat_dms, lat_ref, lng_dms, lng_ref]):
+            return Response({"error": "Dữ liệu GPS không đầy đủ trong ảnh."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        try:
+            lat = _dms_to_decimal(lat_dms, lat_ref)
+            lng = _dms_to_decimal(lng_dms, lng_ref)
+        except Exception:
+            return Response({"error": "Không thể phân tích tọa độ GPS từ ảnh."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        return Response({"lat": round(lat, 7), "lng": round(lng, 7)}, status=status.HTTP_200_OK)

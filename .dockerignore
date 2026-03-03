@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+
+# Git
+.git
+.gitignore
+
+# Local DB
+db.sqlite3
+
+# Media / uploads
+media/
+stores/
+avatars/
+
+# Env file
+.env
+
+# OS
+.DS_Store

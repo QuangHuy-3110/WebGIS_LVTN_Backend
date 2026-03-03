@@ -90,7 +90,7 @@ DATABASES = {
         'NAME': 'gisdb',
         'USER': 'postgres',
         'PASSWORD': '05112004',
-        'HOST': 'localhost',
+        'HOST': os.getenv('DB_HOST', 'localhost'),
         'PORT': '5432',
     }
 }
