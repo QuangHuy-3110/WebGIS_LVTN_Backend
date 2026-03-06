@@ -1,65 +1,51 @@
 /* static/js/admin_auto_gps.js */
 
-// 1. BIẾN TOÀN CỤC (Để tránh lỗi ReferenceError)
+// 1. GLOBAL VARIABLES
 window.globalLeafletMap = null;
 window.currentMarker = null;
 
-// Hàm cập nhật tọa độ vào ô input ẩn của GeoDjango
-window.updateLocationInput = function(lat, lng) {
-    var locationInput = document.querySelector('#id_location');
-    if (locationInput) {
-        // Định dạng WKT: SRID=4326;POINT(Longitude Latitude)
-        locationInput.value = `SRID=4326;POINT(${lng} ${lat})`;
-        console.log("📍 Đã cập nhật input tọa độ:", lat, lng);
-    }
+window.updateLocationInput = function (lat, lng) {
+    var el = document.querySelector('#id_location');
+    if (el) el.value = 'SRID=4326;POINT(' + lng + ' ' + lat + ')';
 }
 
-// Hàm setup marker (cho phép kéo thả)
-window.setupExistingMarker = function(map) {
+window.setupExistingMarker = function (map) {
     if (!map) return;
-    map.eachLayer(layer => {
+    map.eachLayer(function (layer) {
         if (layer instanceof L.Marker) {
             window.currentMarker = layer;
             if (window.currentMarker.dragging) {
                 window.currentMarker.dragging.enable();
-                window.currentMarker.on('dragend', function(e) {
-                     var pos = e.target.getLatLng();
-                     window.updateLocationInput(pos.lat, pos.lng);
+                window.currentMarker.on('dragend', function (e) {
+                    var pos = e.target.getLatLng();
+                    window.updateLocationInput(pos.lat, pos.lng);
                 });
             }
         }
     });
 }
 
-// Hàm vẽ marker mới khi có tọa độ từ ảnh
-window.updateMapMarker = function(lat, lng) {
+window.updateMapMarker = function (lat, lng) {
     if (!window.globalLeafletMap) return;
-    const latlng = [lat, lng];
-
+    var latlng = [lat, lng];
     if (window.currentMarker) window.globalLeafletMap.removeLayer(window.currentMarker);
-    
-    // Xóa marker cũ do widget tạo ra (nếu có)
-    window.globalLeafletMap.eachLayer(layer => {
+    window.globalLeafletMap.eachLayer(function (layer) {
         if (layer instanceof L.Marker) window.globalLeafletMap.removeLayer(layer);
     });
-
     window.currentMarker = L.marker(latlng, { draggable: true }).addTo(window.globalLeafletMap);
-    
-    // Bắt sự kiện kéo thả marker để chỉnh lại vị trí
-    window.currentMarker.on('dragend', function(event) {
+    window.currentMarker.on('dragend', function (event) {
         var position = event.target.getLatLng();
         window.updateLocationInput(position.lat, position.lng);
     });
-
     window.globalLeafletMap.flyTo(latlng, 16);
 }
 
 function getCookie(name) {
-    let cookieValue = null;
+    var cookieValue = null;
     if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
+        var cookies = document.cookie.split(';');
+        for (var i = 0; i < cookies.length; i++) {
+            var cookie = cookies[i].trim();
             if (cookie.substring(0, name.length + 1) === (name + '=')) {
                 cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
                 break;
@@ -69,88 +55,203 @@ function getCookie(name) {
     return cookieValue;
 }
 
-// 2. LẮNG NGHE SỰ KIỆN MAP (Bắt buộc để lấy đối tượng map)
+// 2. MAP EVENT
 window.addEventListener("map:init", function (e) {
     var detail = e.detail;
-    // Kiểm tra xem đây có phải là map của field 'location' không
     if (detail.id.indexOf('location') !== -1) {
-        console.log("🗺️ Map đã tải:", detail.id);
         window.globalLeafletMap = detail.map;
         window.setupExistingMarker(detail.map);
     }
 });
 
-// 3. XỬ LÝ UPLOAD ẢNH & ĐIỀN ID
-document.addEventListener("DOMContentLoaded", function () {
-    const imageInput = document.querySelector('input[name="quick_image"]');
-    const idsInput = document.querySelector('input[name="uploaded_image_ids"]'); // Ô input ẩn chứa ID
-    const addressInput = document.querySelector('#id_address');
-    
-    // Mảng chứa các ID ảnh đã upload thành công
-    let uploadedIds = [];
-    // Mảng chứa file chờ upload (để xử lý tuần tự nếu cần)
-    
-    if (imageInput) {
-        imageInput.addEventListener('change', function (e) {
-            const files = Array.from(e.target.files);
-            if (files.length === 0) return;
+// ============================================================
+// 3. IMAGE PREVIEW ON UPLOAD
+// ============================================================
+function initAdminImagePreview() {
+    var imageInput = document.querySelector('#id_quick_image')
+        || document.querySelector('input[name="quick_image"]');
+    var idsInput = document.querySelector('#id_uploaded_image_ids')
+        || document.querySelector('input[name="uploaded_image_ids"]');
+    var addressInput = document.querySelector('#id_address');
 
-            console.log(`🚀 Bắt đầu upload ${files.length} ảnh...`);
+    if (!imageInput || imageInput._previewBound) return;
+    imageInput._previewBound = true;
 
-            // Upload từng file một
-            files.forEach((file, index) => {
-                uploadFileAndGetId(file, index === 0);
-            });
+    var uploadedIds = [];
+    var totalCards = 0;
+    var previewGrid = null;
 
-            // QUAN TRỌNG: Xóa file khỏi input để khi bấm Save không gửi file nặng lên nữa
-            // Chúng ta chỉ cần gửi ID của ảnh thôi
-            imageInput.value = ''; 
-        });
+    // ---- Create preview grid ABOVE the tabs / fieldsets ----
+    function ensurePreviewGrid() {
+        if (previewGrid) return previewGrid;
+
+        var wrapper = document.createElement('div');
+        wrapper.id = 'admin-preview-wrapper';
+        wrapper.style.cssText = [
+            'margin: 0 0 18px 0;',
+            'padding: 14px 16px;',
+            'background: #f0f4ff;',
+            'border: 1px solid #c2cfe0;',
+            'border-radius: 10px;',
+            'width: 100%;',
+            'box-sizing: border-box;'
+        ].join('');
+
+        var title = document.createElement('p');
+        title.style.cssText = 'font-weight:700;font-size:14px;color:#1f2d3d;margin-bottom:12px;';
+        title.textContent = '\uD83D\uDDBC\uFE0F Uploaded Images:';
+        wrapper.appendChild(title);
+
+        previewGrid = document.createElement('div');
+        previewGrid.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;';
+        wrapper.appendChild(previewGrid);
+
+        // Insert ABOVE all tabs / fieldsets — anchor to #content-main or closest form
+        var anchor = document.querySelector('#content-main')
+            || document.querySelector('.content-main')
+            || document.querySelector('.change-form')
+            || imageInput.closest('form');
+
+        if (anchor) {
+            // Prepend so it sits at the very top of the content area
+            anchor.insertBefore(wrapper, anchor.firstChild);
+        } else {
+            // Fallback: insert after the fieldset that contains the input
+            var fieldset = imageInput.closest('fieldset') || imageInput.parentNode;
+            fieldset.parentNode.insertBefore(wrapper, fieldset.nextSibling);
+        }
+
+        return previewGrid;
     }
 
-    function uploadFileAndGetId(file, isFirst) {
-        const formData = new FormData();
-        formData.append('image', file);
+    // ---- Add thumbnail card ----
+    function addCard(file, cardIndex) {
+        var grid = ensurePreviewGrid();
+
+        var card = document.createElement('div');
+        card.style.cssText = 'width:140px;text-align:center;background:white;border:1px solid #c2cfe0;border-radius:8px;padding:8px;box-shadow:0 2px 6px rgba(0,0,0,.12);';
+
+        var img = document.createElement('img');
+        img.style.cssText = 'width:124px;height:124px;object-fit:cover;border-radius:6px;display:block;cursor:zoom-in;';
+        img.title = 'Click to enlarge';
+        img.addEventListener('click', function () { openLightbox(img.src); });
+
+        var reader = new FileReader();
+        reader.onload = function (ev) { img.src = ev.target.result; };
+        reader.readAsDataURL(file);
+        card.appendChild(img);
+
+        var nameTxt = document.createElement('p');
+        nameTxt.style.cssText = 'font-size:10px;color:#666;margin:5px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        nameTxt.textContent = file.name;
+        nameTxt.title = file.name;
+        card.appendChild(nameTxt);
+
+        var badge = document.createElement('span');
+        badge.setAttribute('data-badge', cardIndex);
+        badge.style.cssText = 'font-size:10px;padding:2px 7px;border-radius:10px;display:inline-block;background:#ffc107;color:#212529;';
+        badge.textContent = 'Uploading...';
+        card.appendChild(badge);
+
+        grid.appendChild(card);
+    }
+
+    function setBadge(cardIndex, success) {
+        if (!previewGrid) return;
+        var badge = previewGrid.querySelector('[data-badge="' + cardIndex + '"]');
+        if (!badge) return;
+        if (success) {
+            badge.style.background = '#28a745';
+            badge.style.color = 'white';
+            badge.textContent = 'Uploaded';
+        } else {
+            badge.style.background = '#dc3545';
+            badge.style.color = 'white';
+            badge.textContent = 'Upload failed';
+        }
+    }
+
+    // ---- Lightbox ----
+    function openLightbox(src) {
+        var overlay = document.getElementById('admin-img-lb');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'admin-img-lb';
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+            overlay.addEventListener('click', function () { overlay.style.display = 'none'; });
+
+            var lbImg = document.createElement('img');
+            lbImg.id = 'admin-lb-img';
+            lbImg.style.cssText = 'max-width:90vw;max-height:90vh;object-fit:contain;border-radius:8px;';
+            lbImg.addEventListener('click', function (e) { e.stopPropagation(); });
+            overlay.appendChild(lbImg);
+
+            var closeBtn = document.createElement('button');
+            closeBtn.textContent = '\u00D7';
+            closeBtn.style.cssText = 'position:absolute;top:20px;right:20px;background:rgba(255,255,255,.2);border:none;border-radius:50%;width:40px;height:40px;color:white;font-size:22px;cursor:pointer;';
+            closeBtn.addEventListener('click', function () { overlay.style.display = 'none'; });
+            overlay.appendChild(closeBtn);
+
+            document.body.appendChild(overlay);
+        }
+        document.getElementById('admin-lb-img').src = src;
+        overlay.style.display = 'flex';
+    }
+
+    // ---- File selection event ----
+    imageInput.addEventListener('change', function (e) {
+        var files = Array.from(e.target.files);
+        if (!files.length) return;
+
+        files.forEach(function (file, idx) {
+            var cardIndex = totalCards++;
+            addCard(file, cardIndex);
+            uploadOne(file, idx === 0, cardIndex);
+        });
+
+        // Clear input to avoid re-submitting large files with the form
+        imageInput.value = '';
+    });
+
+    // ---- Upload a single file ----
+    function uploadOne(file, isFirst, cardIndex) {
+        var fd = new FormData();
+        fd.append('image', file);
 
         fetch('/api/utils/quick-upload/', {
             method: 'POST',
-            body: formData,
+            body: fd,
             headers: { 'X-CSRFToken': getCookie('csrftoken') }
         })
-        .then(res => res.json())
-        .then(data => {
-            if (data.id) {
-                console.log(`✅ Upload thành công: ID=${data.id}`);
-                
-                // 1. Thêm ID vào mảng
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.id) { setBadge(cardIndex, false); return; }
                 uploadedIds.push(data.id);
-                
-                // 2. Cập nhật chuỗi ID vào ô input ẩn (VD: "15,16,17")
-                if (idsInput) {
-                    idsInput.value = uploadedIds.join(',');
-                    console.log("📝 Cập nhật form ids:", idsInput.value);
-                }
+                if (idsInput) idsInput.value = uploadedIds.join(',');
+                setBadge(cardIndex, true);
 
-                // 3. Nếu là ảnh đầu tiên, lấy GPS để điền vào form
                 if (isFirst && data.latitude && data.longitude) {
-                    // Điền địa chỉ text
-                    if (addressInput && !addressInput.value) {
-                        addressInput.value = data.address || "";
-                    }
-                    
-                    // Fallback map
+                    if (addressInput && !addressInput.value) addressInput.value = data.address || '';
                     if (!window.globalLeafletMap && window.id_location_map) {
                         window.globalLeafletMap = window.id_location_map;
                     }
-
-                    // Điền tọa độ
                     window.updateLocationInput(data.latitude, data.longitude);
                     window.updateMapMarker(data.latitude, data.longitude);
-                    
-                    alert("📍 Đã lấy được tọa độ từ ảnh! Bạn hãy điền nốt thông tin và bấm Save.");
+                    alert('GPS coordinates extracted from photo! Fill in the remaining fields and click Save.');
                 }
-            }
-        })
-        .catch(err => console.error("❌ Lỗi upload:", err));
+            })
+            .catch(function (err) {
+                console.error('Upload error:', err);
+                setBadge(cardIndex, false);
+            });
     }
-});
+}
+
+// Run when DOM is ready — handle all cases
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAdminImagePreview);
+} else {
+    initAdminImagePreview();
+}
+// Fallback after 800ms for late-rendering widgets
+setTimeout(initAdminImagePreview, 800);

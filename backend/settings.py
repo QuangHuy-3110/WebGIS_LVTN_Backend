@@ -150,46 +150,81 @@ REST_FRAMEWORK = {
     ),
 }
 
-# Cấu hình giao diện Jazzmin
+# Jazzmin admin interface configuration
 JAZZMIN_SETTINGS = {
-    # Tiêu đề trên tab trình duyệt
-    "site_title": "Hệ thống GIS Cần Thơ",
-    
-    # Tiêu đề ở màn hình đăng nhập
+    "site_title": "Can Tho GIS System",
     "site_header": "GIS Admin",
-    
-    # Logo thương hiệu (để file ảnh trong folder static)
-    # Nếu chưa có static file thì bỏ qua dòng này hoặc để None
-    "site_logo": None, 
-    
-    # Thông điệp chào mừng ở màn hình đăng nhập
-    "welcome_sign": "Chào mừng trở lại quản trị viên GIS",
-
-    # Copyright ở chân trang
+    "site_brand": "🗺️ GIS Admin",
+    "site_logo": None,
+    "welcome_sign": "Welcome back, GIS Administrator",
     "copyright": "Quang Huy GIS Project",
 
-    # Menu bên trái (Sidebar)
-    "search_model": ["users.User", "shops.Store"], # Thanh tìm kiếm nhanh
+    "search_model": ["users.User", "shops.Store"],
+    "user_avatar": "avatar",
 
-    # Giao diện người dùng (Avatar menu)
-    "user_avatar": "avatar", # Field avatar trong bảng User của bạn
-
-    # Thay đổi Icon cho các mục (Dùng FontAwesome 5)
     "icons": {
         "auth": "fas fa-users-cog",
-        "users.User": "fas fa-user",
+        "auth.Group": "fas fa-layer-group",
+        "users.User": "fas fa-user-circle",
         "shops.Store": "fas fa-store",
-        "shops.Category": "fas fa-list",
+        "shops.Category": "fas fa-tags",
+        "shops.StoreImage": "fas fa-images",
+        "shops.ApprovalProfile": "fas fa-clipboard-check",
         "social.Review": "fas fa-star",
     },
 
+    # Sidebar style
+    "sidebar": "sidebar-dark-primary",
+    "navbar": "navbar-white navbar-light",
+    "no_navbar_border": True,
+    "navbar_fixed": False,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": True,
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": True,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+
+    "show_ui_builder": False,
+
     "custom_css": "css/admin_fix.css",
+    "custom_js": "js/admin_custom.js",
 }
 
-# Tùy chỉnh giao diện (Màu sắc)
+# Jazzmin UI colour tweaks
 JAZZMIN_UI_TWEAKS = {
-    "theme": "flatly",   # Có thể thử: darkly, slate, simplex, united
-    #"dark_mode_theme": "darkly", # Nếu muốn chế độ tối
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-primary",
+    "accent": "accent-primary",
+    "navbar": "navbar-white navbar-light",
+    "no_navbar_border": True,
+    "navbar_fixed": False,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": True,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": True,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "flatly",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-outline-primary",
+        "secondary": "btn-outline-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success",
+    },
 }
 
 LEAFLET_CONFIG = {

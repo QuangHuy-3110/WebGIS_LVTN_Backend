@@ -33,6 +33,8 @@ class StoreSerializer(GeoFeatureModelSerializer):
     close_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
     image = serializers.ImageField(write_only=True, required=False)
 
+    email = serializers.CharField(required=False, allow_null=True, allow_blank=True, max_length=255)
+
     class Meta:
         model = Store
         fields = [
@@ -45,7 +47,7 @@ class StoreSerializer(GeoFeatureModelSerializer):
             'images', 'image'
         ]
         geo_field = 'location'
-        read_only_fields = ['rating_avg', 'rating_count', 'state', 'is_active']
+        read_only_fields = ['rating_avg', 'rating_count', 'is_active']
 
     def get_images(self, obj):
         public_images = obj.image.filter(state='public')

@@ -35,7 +35,7 @@ class CustomUserAdmin(UserAdmin):
     # Hàm tạo HTML hiển thị ảnh avatar nhỏ
     def avatar_preview(self, obj):
         if obj.avatar:
-            return mark_safe(f'<img src="{obj.avatar.url}" style="width: 100px; height: auto; border-radius: 5px;" />')
+            return mark_safe(f'<a href="{obj.avatar.url}" class="admin-image-modal"><img src="{obj.avatar.url}" style="width: 100px; height: auto; border-radius: 5px;" /></a>')
         return "Chưa có ảnh"
     avatar_preview.short_description = "Xem trước Avatar"
 
