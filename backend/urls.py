@@ -9,7 +9,7 @@ from django.conf.urls.static import static
 # --- CẤU HÌNH GIAO DIỆN ADMIN ---
 admin.site.site_header = "Hệ thống Quản lý Bản đồ GIS"
 admin.site.site_title = "GIS Admin Portal"
-admin.site.index_title = "Chào mừng đến với trang quản trị"
+admin.site.index_title = "Dashbord"
 
 urlpatterns = [
     # 1. Trang quản trị Django

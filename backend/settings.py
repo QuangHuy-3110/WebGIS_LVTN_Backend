@@ -152,7 +152,7 @@ REST_FRAMEWORK = {
 
 # Jazzmin admin interface configuration
 JAZZMIN_SETTINGS = {
-    "site_title": "Can Tho GIS System",
+    "site_title": "Can Tho Map Admin",
     "site_header": "GIS Admin",
     "site_brand": "🗺️ GIS Admin",
     "site_logo": None,

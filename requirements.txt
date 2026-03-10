@@ -14,3 +14,4 @@ psycopg2-binary==2.9.11
 PyJWT==2.10.1
 rtree==1.4.1
 sqlparse==0.5.5
+requests==2.31.0

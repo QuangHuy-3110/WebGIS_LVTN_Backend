@@ -9,6 +9,7 @@ from rest_framework_gis.filters import InBBoxFilter
 from rest_framework.views import APIView
 # --- THÊM DÒNG NÀY ĐỂ FIX LỖI 401 ---
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+import requests
 
 # ------------------------------------
 from .utils import extract_gps_data
@@ -118,12 +119,36 @@ class QuickImageUploadView(APIView):
             state='private'
         )
 
+        # Call ML Server to analyze the uploaded image
+        ml_data = {}
+        try:
+            image_abs_path = temp_img.image.path
+            print(f"DEBUG: Gửi ảnh cho ML Model: {image_abs_path}")
+            resp = requests.post('http://localhost:5050/analyze', json={'image_path': image_abs_path}, timeout=60)
+            if resp.status_code == 200:
+                ml_data = resp.json()
+                print(f"DEBUG: Nhận dc ML_DATA: {ml_data}")
+            else:
+                print(f"DEBUG: Lỗi từ ML_Server: {resp.status_code} {resp.text}")
+        except Exception as e:
+            print(f"DEBUG: Exception khi request ML: {e}")
+
+        category_name = ml_data.get('category', '')
+        category_id = None
+        if category_name:
+            cat = Category.objects.filter(name__icontains=category_name).first()
+            if cat:
+                category_id = cat.id
+
         return Response({
             "id": temp_img.id,
             "url": temp_img.image.url,
             "latitude": gps_data.get('latitude'),
             "longitude": gps_data.get('longitude'),
-            "address": gps_data.get('address', '')
+            "address_gps": gps_data.get('address', ''),
+            "category_id": category_id,
+            "contact_info": ml_data.get('info', {}),
+            "raw_texts": ml_data.get('texts', [])
         })
 
 class AnalyzeImageView(APIView):
