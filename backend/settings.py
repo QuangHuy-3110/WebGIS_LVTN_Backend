@@ -230,10 +230,22 @@ JAZZMIN_UI_TWEAKS = {
 LEAFLET_CONFIG = {
     'DEFAULT_CENTER': (10.0452, 105.7469), # Tọa độ Cần Thơ
     'DEFAULT_ZOOM': 12,
-    'MIN_ZOOM': 3,
-    'MAX_ZOOM': 18,
+    'MIN_ZOOM': 10,
+    'MAX_ZOOM': 21,
     'SCALE': 'both',
     'ATTRIBUTION_PREFIX': 'Bản đồ Cần Thơ',
+    'TILES': [
+        ('Bản đồ tiêu chuẩn', 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            'attribution': '&copy; <a href="https://carto.com/">Carto</a>',
+            'maxNativeZoom': 19,
+            'maxZoom': 21
+        }),
+        ('Bản đồ vệ tinh (ArcGIS)', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            'attribution': 'Tiles &copy; Esri',
+            'maxNativeZoom': 19,
+            'maxZoom': 21
+        })
+    ],
 }
 
 MEDIA_URL = '/media/'

@@ -28,10 +28,16 @@ window.setupExistingMarker = function (map) {
 window.updateMapMarker = function (lat, lng) {
     if (!window.globalLeafletMap) return;
     var latlng = [lat, lng];
-    if (window.currentMarker) window.globalLeafletMap.removeLayer(window.currentMarker);
-    window.globalLeafletMap.eachLayer(function (layer) {
-        if (layer instanceof L.Marker) window.globalLeafletMap.removeLayer(layer);
-    });
+    if (window.currentMarker) {
+        window.globalLeafletMap.removeLayer(window.currentMarker);
+    } else {
+        // Fallback in case currentMarker wasn't caught, try to find and remove default marker without touching existingStoresLayer
+        window.globalLeafletMap.eachLayer(function (layer) {
+            if (layer instanceof L.Marker && (!window.existingStoresLayer || !window.existingStoresLayer.hasLayer(layer))) {
+                window.globalLeafletMap.removeLayer(layer);
+            }
+        });
+    }
     window.currentMarker = L.marker(latlng, { draggable: true }).addTo(window.globalLeafletMap);
     window.currentMarker.on('dragend', function (event) {
         var position = event.target.getLatLng();
@@ -61,8 +67,51 @@ window.addEventListener("map:init", function (e) {
     if (detail.id.indexOf('location') !== -1) {
         window.globalLeafletMap = detail.map;
         window.setupExistingMarker(detail.map);
+        
+        // Load existing stores onto the map to visually check for duplicates
+        window.loadExistingStores(detail.map);
     }
 });
+
+window.loadExistingStores = function(map) {
+    if (!map) return;
+    fetch('/api/stores/')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (window.existingStoresLayer) {
+                map.removeLayer(window.existingStoresLayer);
+            }
+            
+            var existingStoreIcon = L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+
+            window.existingStoresLayer = L.geoJSON(data, {
+                pointToLayer: function(feature, latlng) {
+                    // Cửa hàng hiện tại đang chỉnh sửa sẽ có tên hoặc id, có thể bỏ qua nếu trùng vị trí không?
+                    // Ở đây cứ hiển thị tất cả
+                    return L.marker(latlng, {
+                        icon: existingStoreIcon,
+                        title: feature.properties.name || 'Cửa hàng đã tồn tại'
+                    });
+                },
+                onEachFeature: function(feature, layer) {
+                    var popupContent = '<div style="font-family: sans-serif; min-width: 150px;">' +
+                                       '<b style="color: #dc3545;">\u26A0 Cửa hàng đã tồn tại:</b><br>' +
+                                       '<b>' + (feature.properties.name || 'Không tên') + '</b><br>' + 
+                                       '<span style="font-size: 11px; color: #666;">' + (feature.properties.address || 'Không có địa chỉ') + '</span>' +
+                                       '</div>';
+                    layer.bindPopup(popupContent);
+                }
+            }).addTo(map);
+        })
+        .catch(function(err) { console.error('Error fetching existing stores:', err); });
+}
 
 // ============================================================
 // 3. IMAGE PREVIEW ON UPLOAD
