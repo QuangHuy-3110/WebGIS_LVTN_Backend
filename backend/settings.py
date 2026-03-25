@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -39,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.gis',
+    'channels',
     'rest_framework',      # <--- BẠN ĐANG THIẾU DÒNG NÀY
     'rest_framework_gis',  # Hỗ trợ bản đồ
     'corsheaders',         # Hỗ trợ React gọi API
@@ -79,6 +81,13 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'backend.wsgi.application'
+ASGI_APPLICATION = 'backend.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
 
 
 # Database

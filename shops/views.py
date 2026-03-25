@@ -122,9 +122,14 @@ class QuickImageUploadView(APIView):
         # Call ML Server to analyze the uploaded image
         ml_data = {}
         try:
+            import time
+            start_ocr_time = time.time()
             image_abs_path = temp_img.image.path
             print(f"DEBUG: Gửi ảnh cho ML Model: {image_abs_path}")
             resp = requests.post('http://localhost:5050/analyze', json={'image_path': image_abs_path}, timeout=60)
+            end_ocr_time = time.time()
+            print(f"📸 [MEASURE] Thời gian trích xuất thông tin trên ảnh: {(end_ocr_time - start_ocr_time)*1000:.2f} ms")
+            
             if resp.status_code == 200:
                 ml_data = resp.json()
                 print(f"DEBUG: Nhận dc ML_DATA: {ml_data}")

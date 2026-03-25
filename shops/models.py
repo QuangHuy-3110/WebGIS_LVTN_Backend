@@ -5,6 +5,28 @@ from django.contrib.gis.geos import Point
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 import json
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
+@receiver(post_save, sender='shops.Store')
+def broadcast_store_update(sender, instance, created, **kwargs):
+    if instance.state == 'active':
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            'store_updates',
+            {
+                'type': 'store_message',
+                'message': {
+                    'action': 'STORE_ADDED' if created else 'STORE_UPDATED',
+                    'store_id': instance.id,
+                    'name': instance.name,
+                    'lat': instance.location.y if instance.location else None,
+                    'lng': instance.location.x if instance.location else None
+                }
+            }
+        )
 
 class Category(models.Model):
     name = models.CharField(max_length=255)

@@ -82,6 +82,9 @@ class RoutingView(APIView):
             # --- LỰA CHỌN THUẬT TOÁN ---
             print(f"Đang chạy thuật toán: {algo_type.upper()}")
             
+            import time
+            start_algo_time = time.time()
+            
             path_details = None
             if algo_type == 'astar':
                 # A* cần thêm nodes_coords để tính khoảng cách
@@ -89,6 +92,14 @@ class RoutingView(APIView):
             else:
                 # Dijkstra truyền thống
                 path_details = routing_utils.dijkstra_solver(graph, START_ID, END_ID)
+
+            end_algo_time = time.time()
+            print(f"⏱️ [MEASURE] Đo lường tốc độ thuật toán ({algo_type.upper()}): {(end_algo_time - start_algo_time)*1000:.2f} ms")
+
+            # Snap-to-edge accuracy:
+            start_dist_to_proj = routing_utils.haversine(start_coords, start_res['proj_point'])
+            end_dist_to_proj = routing_utils.haversine(end_coords, end_res['proj_point'])
+            print(f"🎯 [MEASURE] Đo lường độ chính xác của Snap-to-Edge: StartPoint sai số {start_dist_to_proj:.2f}m, EndPoint sai số {end_dist_to_proj:.2f}m")
 
             # --- Tạo GeoJSON (Giữ nguyên logic cũ) ---
             if path_details:
@@ -120,7 +131,12 @@ class RoutingView(APIView):
                     geojson["features"].append({
                         "type": "Feature",
                         "geometry": final_geom,
-                        "properties": {"edge_id": eid, "type": "road"}
+                        "properties": {
+                            "edge_id": eid, 
+                            "type": "road",
+                            "name": edges_info[eid].get('name', 'Không tên'),
+                            "length_m": edges_info[eid].get('length_m', 0)
+                        }
                     })
 
                 # Connector cuối

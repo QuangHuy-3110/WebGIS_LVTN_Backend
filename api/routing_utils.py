@@ -45,11 +45,11 @@ def haversine(coord1, coord2):
 # --- 2. TƯƠNG TÁC DATABASE ---
 
 def fetch_graph_data(bbox):
-    # (Giữ nguyên như cũ)
     sql = """
-        SELECT gid, source, target, cost, reverse_cost, length_m, ST_AsGeoJSON(the_geom)
+        SELECT gid, source, target, cost, reverse_cost, length_m, name, ST_AsGeoJSON(the_geom)
         FROM ways
         WHERE the_geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
+          AND tag_id NOT IN (114, 117, 118, 119, 122)
     """
     with connection.cursor() as cursor:
         cursor.execute(sql, bbox)
@@ -62,7 +62,7 @@ def build_graph(rows):
     nodes_coords = {} # <--- MỚI: Cần lưu tọa độ Node để chạy A*
 
     for row in rows:
-        edge_id, u, v, db_cost, db_rev_cost, length_m, geom_json = row
+        edge_id, u, v, db_cost, db_rev_cost, length_m, name, geom_json = row
         geom = json.loads(geom_json)
 
         # Lưu thông tin cạnh
@@ -74,7 +74,9 @@ def build_graph(rows):
             'source': u,
             'target': v,
             'cost': actual_cost,
-            'reverse_cost': actual_rev_cost
+            'reverse_cost': actual_rev_cost,
+            'name': name,
+            'length_m': length_m
         }
 
         # --- MỚI: Lưu tọa độ Node (Lấy điểm đầu và cuối của Geometry) ---
