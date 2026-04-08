@@ -109,8 +109,8 @@ def build_graph_with_index(rows):
     idx = index.Index()
 
     for row in rows:
-        # Unpack dữ liệu từ SQL (gid, source, target, cost, reverse_cost, length, geom)
-        edge_id, u, v, db_cost, db_rev_cost, length_m, geom_json = row
+        # Unpack dữ liệu từ SQL (gid, source, target, cost, reverse_cost, length, name, geom)
+        edge_id, u, v, db_cost, db_rev_cost, length_m, name, geom_json = row
         geom = json.loads(geom_json)
         coords = geom['coordinates']
 

@@ -104,39 +104,41 @@ class QuickImageUploadView(APIView):
         if not file_obj:
             return Response({"error": "No file"}, status=400)
 
+        import os
+        import tempfile
+        import time
+
         # 1. Reset file để đọc GPS
         if hasattr(file_obj, 'seek'): file_obj.seek(0)
         gps_data = extract_gps_data(file_obj) or {}
 
-        # 2. Reset file lần nữa để Django lưu
+        # 2. Lưu file ra thư mục tạm của OS (Không lưu rác vào DB)
         if hasattr(file_obj, 'seek'): file_obj.seek(0)
-
-        # 3. Lưu ảnh "mồ côi" (Store=None)
-        temp_img = StoreImage.objects.create(
-            image=file_obj,
-            uploaded_by=request.user,
-            store=None,
-            state='private'
-        )
+        
+        ml_data = {}
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+            for chunk in file_obj.chunks():
+                tmp_file.write(chunk)
+            tmp_file_path = tmp_file.name
 
         # Call ML Server to analyze the uploaded image
-        ml_data = {}
         try:
-            import time
             start_ocr_time = time.time()
-            image_abs_path = temp_img.image.path
-            print(f"DEBUG: Gửi ảnh cho ML Model: {image_abs_path}")
-            resp = requests.post('http://localhost:5050/analyze', json={'image_path': image_abs_path}, timeout=60)
+            print(f"DEBUG: Gửi ảnh cho ML Model (Temporary): {tmp_file_path}")
+            resp = requests.post('http://localhost:5050/analyze', json={'image_path': tmp_file_path}, timeout=60)
             end_ocr_time = time.time()
             print(f"📸 [MEASURE] Thời gian trích xuất thông tin trên ảnh: {(end_ocr_time - start_ocr_time)*1000:.2f} ms")
             
             if resp.status_code == 200:
                 ml_data = resp.json()
-                print(f"DEBUG: Nhận dc ML_DATA: {ml_data}")
             else:
                 print(f"DEBUG: Lỗi từ ML_Server: {resp.status_code} {resp.text}")
         except Exception as e:
             print(f"DEBUG: Exception khi request ML: {e}")
+        finally:
+            # Luôn luôn xóa file tạm để không để lại rác
+            if os.path.exists(tmp_file_path):
+                os.remove(tmp_file_path)
 
         category_name = ml_data.get('category', '')
         category_id = None
@@ -146,8 +148,6 @@ class QuickImageUploadView(APIView):
                 category_id = cat.id
 
         return Response({
-            "id": temp_img.id,
-            "url": temp_img.image.url,
             "latitude": gps_data.get('latitude'),
             "longitude": gps_data.get('longitude'),
             "address_gps": gps_data.get('address', ''),

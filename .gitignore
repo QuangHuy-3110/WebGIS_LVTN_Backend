@@ -20,3 +20,6 @@ media/
 
 # Bỏ qua file hệ thống
 .DS_Store
+
+test_benchmark.py
+test_exif.py
