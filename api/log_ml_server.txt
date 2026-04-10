@@ -1,0 +1,79 @@
+🚀 Khởi động ML Server trên cổng 5050...
+=== Đang tải tất cả models (YOLO, PaddleOCR, VietOCR, Qwen, Classifier)... ===
+🚀 Khởi động ML Server trên cổng 5050...
+=== Đang tải tất cả models (YOLO, PaddleOCR, VietOCR, Qwen, Classifier)... ===
+✅ YOLO loaded.
+✅ PaddleOCR loaded.
+✅ VietOCR loaded.
+✅ Classifier loaded: True
+✅ Qwen LLM (LoRA) loaded.
+=== Tất cả models đã sẵn sàng! ===
+
+🚀 Khởi động ML Server trên cổng 5050...
+=== Đang tải tất cả models (YOLO, PaddleOCR, VietOCR, Qwen, Classifier)... ===
+✅ YOLO loaded.
+✅ PaddleOCR loaded.
+✅ VietOCR loaded.
+✅ Classifier loaded: True
+✅ Qwen LLM (LoRA) loaded.
+=== Tất cả models đã sẵn sàng! ===
+
+[YOLO] Phát hiện 1 biển hiệu trong 0.939s
+[YOLO] Phát hiện 1 biển hiệu trong 0.027s
+[VietOCR] Đọc được 4 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["MẮT KÍNH Eyewear"], "SERVICE": [], "O": []}
+[Classifier] Category = Y Tế & Sức Khỏe
+[YOLO] Phát hiện 3 biển hiệu trong 0.059s
+[YOLO] Phát hiện 3 biển hiệu trong 0.032s
+[VietOCR] Đọc được 3 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["SHOWROOM PRIME"], "SERVICE": ["PRIME CHẤT LƯỢNG QUỐC TẾ"], "O": []}
+[Classifier] Category = Xây Dựng & Nội Thất
+[YOLO] Phát hiện 3 biển hiệu trong 0.126s
+[YOLO] Phát hiện 3 biển hiệu trong 0.025s
+[VietOCR] Đọc được 10 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["ROYAL CHUYÊN CUNG CẤP GẠCH ỐP LÁT CAO CẤP HOÀNG GIA"], "SERVICE": [], "O": ["ROYAL", "CHUYÊN CUNG CẤP", "HẰNG MONG ƯỚC"]}
+[Classifier] Category = Xây Dựng & Nội Thất
+[YOLO] Phát hiện 3 biển hiệu trong 0.106s
+[YOLO] Phát hiện 3 biển hiệu trong 0.033s
+[VietOCR] Đọc được 10 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["ROYAL CHUYÊN CUNG CẤP GẠCH ỐP LÁT CAO CẤP HOÀNG GIA"], "SERVICE": [], "O": ["ROYAL", "CHUYÊN CUNG CẤP", "HẰNG MONG ƯỚC"]}
+[Classifier] Category = Xây Dựng & Nội Thất
+[YOLO] Phát hiện 3 biển hiệu trong 0.053s
+[VietOCR] Đọc được 3 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["SHOWROOM CNUMER CHẤT LƯỢNG Q TẾ"], "SERVICE": [], "O": []}
+[Classifier] Category = Tài Chính & Doanh Nghiệp
+[YOLO] Phát hiện 3 biển hiệu trong 0.054s
+[YOLO] Phát hiện 3 biển hiệu trong 0.027s
+[VietOCR] Đọc được 10 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["ROYAL CHUYÊN CUNG CẤP GẠCH ỐP LÁT CAO CẤP HOÀNG GIA"], "SERVICE": [], "O": ["ROYAL", "CHUYÊN CUNG CẤP", "HẰNG MONG ƯỚC"]}
+[Classifier] Category = Xây Dựng & Nội Thất
+[YOLO] Phát hiện 1 biển hiệu trong 0.054s
+[YOLO] Phát hiện 1 biển hiệu trong 0.032s
+[VietOCR] Đọc được 4 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["MẮT KÍNH Eyewear"], "SERVICE": [], "O": []}
+[Classifier] Category = Y Tế & Sức Khỏe
+[YOLO] Phát hiện 1 biển hiệu trong 0.053s
+[YOLO] Phát hiện 1 biển hiệu trong 0.026s
+[VietOCR] Đọc được 4 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["MẮT KÍNH Eyewear"], "SERVICE": [], "O": []}
+[Classifier] Category = Y Tế & Sức Khỏe
+[YOLO] Phát hiện 1 biển hiệu trong 0.042s
+[YOLO] Phát hiện 1 biển hiệu trong 0.049s
+[VietOCR] Đọc được 4 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["MẮT KÍNH Eyewear"], "SERVICE": [], "O": []}
+[Classifier] Category = Y Tế & Sức Khỏe
+[YOLO] Phát hiện 1 biển hiệu trong 0.085s
+[YOLO] Phát hiện 1 biển hiệu trong 0.027s
+[VietOCR] Đọc được 4 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["MẮT KÍNH Eyewear"], "SERVICE": [], "O": []}
+[Classifier] Category = Y Tế & Sức Khỏe
+[YOLO] Phát hiện 1 biển hiệu trong 0.053s
+[YOLO] Phát hiện 1 biển hiệu trong 0.027s
+[VietOCR] Đọc được 4 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["MẮT KÍNH Eyewear"], "SERVICE": [], "O": []}
+[Classifier] Category = Y Tế & Sức Khỏe
+[YOLO] Phát hiện 3 biển hiệu trong 0.066s
+[YOLO] Phát hiện 3 biển hiệu trong 0.025s
+[VietOCR] Đọc được 10 dòng chữ.
+[Qwen LLM] Raw output: {"BRAND": ["ROYAL CHUYÊN CUNG CẤP GẠCH ỐP LÁT CAO CẤP HOÀNG GIA"], "SERVICE": [], "O": ["ROYAL", "CHUYÊN CUNG CẤP", "HẰNG MONG ƯỚC"]}
+[Classifier] Category = Xây Dựng & Nội Thất
