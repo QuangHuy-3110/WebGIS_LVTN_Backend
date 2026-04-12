@@ -1,3 +1,4 @@
+import os
 from django.contrib import admin
 from django import forms
 from django.utils.html import mark_safe
@@ -240,7 +241,7 @@ class ApprovalNoteWidget(forms.Textarea):
             setTimeout(function() {{
                 if (typeof L === 'undefined') return;
                 var noteMap = L.map('note-map', {{ minZoom: 5, maxZoom: 20 }}).setView([{old_lat}, {old_lng}], 16);
-                L.tileLayer('https://api.maptiler.com/maps/topo-v4/{{z}}/{{x}}/{{y}}@2x.png?key=8VtL7nDfk7i0W2TAHvlE', {{
+                L.tileLayer('https://api.maptiler.com/maps/topo-v4/{{z}}/{{x}}/{{y}}@2x.png?key={os.environ.get("MAPTILER_KEY", "")}', {{
                     maxZoom: 20,
                     crossOrigin: 'anonymous',
                     attribution: '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a>'

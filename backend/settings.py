@@ -11,19 +11,23 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Tải biến môi trường từ file .env
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-k+-hmqc)#_#olqdzff40-594p^zn@mak$4@)e777wbd@!)swi+'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'default-unsafe-secret-key-for-dev')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = []
 
@@ -244,7 +248,7 @@ LEAFLET_CONFIG = {
     'SCALE': 'both',
     'ATTRIBUTION_PREFIX': 'Bản đồ Cần Thơ',
     'TILES': [
-        ('Bản đồ tiêu chuẩn (MapTiler)', 'https://api.maptiler.com/maps/topo-v4/{z}/{x}/{y}@2x.png?key=8VtL7nDfk7i0W2TAHvlE', {
+        ('Bản đồ tiêu chuẩn (MapTiler)', f"https://api.maptiler.com/maps/topo-v4/{{z}}/{{x}}/{{y}}@2x.png?key={os.environ.get('MAPTILER_KEY', '')}", {
             'attribution': '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a>',
             'maxNativeZoom': 20,
             'maxZoom': 21
