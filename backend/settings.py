@@ -244,16 +244,16 @@ LEAFLET_CONFIG = {
     'SCALE': 'both',
     'ATTRIBUTION_PREFIX': 'Bản đồ Cần Thơ',
     'TILES': [
-        ('Bản đồ tiêu chuẩn', 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            'attribution': '&copy; <a href="https://carto.com/">Carto</a>',
-            'maxNativeZoom': 19,
+        ('Bản đồ tiêu chuẩn (MapTiler)', 'https://api.maptiler.com/maps/topo-v4/{z}/{x}/{y}@2x.png?key=8VtL7nDfk7i0W2TAHvlE', {
+            'attribution': '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a>',
+            'maxNativeZoom': 20,
             'maxZoom': 21
         }),
         ('Bản đồ vệ tinh (ArcGIS)', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             'attribution': 'Tiles &copy; Esri',
             'maxNativeZoom': 19,
             'maxZoom': 21
-        })
+        }),
     ],
 }
 

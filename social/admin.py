@@ -12,10 +12,16 @@ class ReviewAdmin(admin.ModelAdmin):
         return obj.content[:50] + "..." if len(obj.content) > 50 else obj.content
     short_content.short_description = "Nội dung"
 
+    class Media:
+        js = ('js/admin_bulk_delete.js',)
+
 class FavoriteAdmin(admin.ModelAdmin):
     list_display = ('user', 'store')
     search_fields = ('user__username', 'store__name')
     list_filter = ('store',)
+
+    class Media:
+        js = ('js/admin_bulk_delete.js',)
 
 admin.site.register(Review, ReviewAdmin)
 admin.site.register(Favorite, FavoriteAdmin)

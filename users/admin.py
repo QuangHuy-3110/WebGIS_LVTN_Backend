@@ -39,6 +39,9 @@ class CustomUserAdmin(UserAdmin):
         return "Chưa có ảnh"
     avatar_preview.short_description = "Xem trước Avatar"
 
+    class Media:
+        js = ('js/admin_bulk_delete.js',)
+
 
 # --- 2. CẤU HÌNH ADMIN CHO SEARCH HISTORY (BẢN ĐỒ) ---
 class SearchHistoryAdmin(LeafletGeoAdmin):
@@ -53,6 +56,9 @@ class SearchHistoryAdmin(LeafletGeoAdmin):
        'MIN_ZOOM': 5,
        'MAX_ZOOM': 18,
     }
+
+    class Media:
+        js = ('js/admin_bulk_delete.js',)
 
 # --- 3. ĐĂNG KÝ MODEL ---
 admin.site.register(User, CustomUserAdmin)

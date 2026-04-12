@@ -77,3 +77,12 @@
 [VietOCR] Đọc được 10 dòng chữ.
 [Qwen LLM] Raw output: {"BRAND": ["ROYAL CHUYÊN CUNG CẤP GẠCH ỐP LÁT CAO CẤP HOÀNG GIA"], "SERVICE": [], "O": ["ROYAL", "CHUYÊN CUNG CẤP", "HẰNG MONG ƯỚC"]}
 [Classifier] Category = Xây Dựng & Nội Thất
+🚀 Khởi động ML Server trên cổng 5050...
+=== Đang tải tất cả models (YOLO, PaddleOCR, VietOCR, Qwen, Classifier)... ===
+✅ YOLO loaded.
+✅ PaddleOCR loaded.
+✅ VietOCR loaded.
+✅ Classifier loaded: True
+✅ Qwen LLM (LoRA) loaded.
+=== Tất cả models đã sẵn sàng! ===
+
