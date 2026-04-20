@@ -11,6 +11,7 @@ import base64
 import json
 import time
 import concurrent.futures
+from datetime import datetime
 
 # --- FIX LỖI PILLOW 10.0+ ---
 import PIL.Image
@@ -36,10 +37,12 @@ from underthesea import word_tokenize
 # HÀM LƯU LOG
 # ==============================================================================
 def write_log(text):
-    print(text, flush=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    formatted_text = f"[{timestamp}] {text}"
+    print(formatted_text, flush=True)
     try:
         with open("log_ml_server.txt", "a", encoding="utf-8") as f:
-            f.write(str(text) + "\n")
+            f.write(formatted_text + "\n")
     except Exception:
         pass
 
@@ -507,16 +510,34 @@ class OCRBackend:
     # ------------------------------------------------------------------
     def extract_info_and_clean_text(self, texts):
         combined = " ".join(texts)
-        emails   = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', combined)
-        emails   = list(dict.fromkeys(emails))
-
-        raw_webs = re.findall(
-            r'\b(?:www\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}|[a-zA-Z0-9-]+\.(?:com|vn|net|org)(?:\.[a-zA-Z]{2,})?)\b',
-            combined
-        )
-        exclude_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com']
-        webs = [w for w in raw_webs if '@' not in w and not any(w.lower() == d for d in exclude_domains)]
+        
+        emails = []
+        standard_emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', combined)
+        emails.extend(standard_emails)
+        
+        fallback_emails = re.findall(r'(?i)\b(?:e-?mail|mail)\s*[:\-]?\s*([a-zA-Z0-9._%+-]+)', combined)
+        for pe in fallback_emails:
+            if '.' in pe and len(pe) > 5 and '@' not in pe:
+                pe_fixed = re.sub(r'[QqAa0O]?\.?(gmail\.com|yahoo\.com|outlook\.com|hotmail\.com|icloud\.com)', r'@\1', pe, flags=re.IGNORECASE)
+                if '@' in pe_fixed:
+                    emails.append(pe_fixed)
+                else:
+                    emails.append(pe)
+                    
+        emails = list(dict.fromkeys(emails))
+        
+        raw_webs = re.findall(r'\b(?:www\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}|[a-zA-Z0-9-]+\.(?:com|vn|net|org)(?:\.[a-zA-Z]{2,})?)\b', combined)
+        webs = []
+        exclude_mail_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com']
+        
+        for w in raw_webs:
+            w_lower = w.lower()
+            if "@" in w: continue
+            if any(w_lower == d or w_lower.endswith("@" + d) for d in exclude_mail_domains): continue
+            webs.append(w)
+            
         webs = list(dict.fromkeys(webs))
+        
         return {"email": emails, "website": webs}
 
     # ------------------------------------------------------------------
@@ -621,48 +642,56 @@ class OCRBackend:
                     f"{int(np.max(r['box_points'][:,0,0]))}, {int(np.max(r['box_points'][:,0,1]))}] {r['text']}"
                     for r in remaining_for_llm
                 ])
-                prompt = f"""Nhiệm vụ: Phân tích các dòng chữ OCR từ biển hiệu và trích xuất vào định dạng JSON.
+                prompt = f"""Nhiệm vụ: Phân tích các dòng chữ OCR từ biển hiệu và trích xuất vào định dạng JSON. 
 Chỉ xuất JSON hợp lệ, các giá trị phải là mảng (Array). Không giải thích.
 
 Các trường cần trích xuất:
-- "BRAND": Tên thương hiệu, công ty, cửa hàng.
-- "SERVICE": Các loại hình dịch vụ, ngành nghề, sản phẩm kinh doanh.
-- "O": Thông tin phụ, nhiễu: câu slogan, bằng cấp, nhãn hiệu quảng cáo.
+- "BRAND": Tên thương hiệu, công ty, cửa hàng. TRÍCH XUẤT ĐẦY ĐỦ loại hình kinh doanh và tên riêng. CHÚ Ý: Nếu biển hiệu có cả tên công ty chủ quản và tên chi nhánh/cửa hàng trực thuộc, hãy GỘP CHUNG tất cả thành 1 giá trị BRAND duy nhất.
+- "SERVICE": Các loại hình dịch vụ, ngành nghề, sản phẩm kinh doanh hoặc liên quan tới việc kinh doanh.
+- "O": Thông tin phụ, nhiễu: câu slogan, bằng cấp, nhãn hiệu quảng cáo, hoặc các đoạn địa chỉ/số điện thoại thừa bị sót lại.
 
 --- VÍ DỤ ---
 Đầu vào OCR:
 [50, 20, 800, 60] CÔNG TY TNHH DƯỢC PHẨM TÂY ĐÔ
 [100, 80, 750, 150] NHÀ THUỐC HUỲNH LỘC
 [200, 160, 600, 200] CHUYÊN BÁN SỈ VÀ LẺ THUỐC TÂY
+[120, 220, 400, 250] DSĐH: Tiêu Huỳnh Lộc
+[150, 400, 300, 440] Salonpas
 
 Đầu ra JSON:
-{{"BRAND": ["CÔNG TY TNHH DƯỢC PHẨM TÂY ĐÔ NHÀ THUỐC HUỲNH LỘC"], "SERVICE": ["CHUYÊN BÁN SỈ VÀ LẺ THUỐC TÂY"], "O": []}}
+{{"BRAND": ["CÔNG TY TNHH DƯỢC PHẨM TÂY ĐÔ NHÀ THUỐC HUỲNH LỘC"], "SERVICE": ["CHUYÊN BÁN SỈ VÀ LẺ THUỐC TÂY"], "O": ["DSĐH: Tiêu Huỳnh Lộc", "Salonpas"]}}
 -------------
 
 Đầu vào OCR:
 {ctx}
 
 Đầu ra JSON:"""
-                inputs = {
-                    k: v.to(self.qwen_llm.device)
-                    for k, v in self.qwen_tokenizer(
-                        [self.qwen_tokenizer.apply_chat_template(
-                            [{"role": "user", "content": prompt}],
-                            tokenize=False, add_generation_prompt=True
-                        )],
-                        return_tensors="pt"
-                    ).items()
-                }
-                with torch.no_grad():
-                    g_ids = self.qwen_llm.generate(
-                        **inputs, max_new_tokens=1024, do_sample=False,
-                        pad_token_id=self.qwen_tokenizer.eos_token_id
-                    )
-                res_text = self.qwen_tokenizer.batch_decode(
-                    [g[len(i):] for i, g in zip(inputs["input_ids"], g_ids)],
-                    skip_special_tokens=True
-                )[0]
-                write_log(f"[Qwen LLM] Raw output: {res_text[:300]}")
+                write_log("[Qwen LLM] Đang chuẩn bị input...")
+                try:
+                    inputs = {
+                        k: v.to(self.qwen_llm.device)
+                        for k, v in self.qwen_tokenizer(
+                            [self.qwen_tokenizer.apply_chat_template(
+                                [{"role": "user", "content": prompt}],
+                                tokenize=False, add_generation_prompt=True
+                            )],
+                            return_tensors="pt"
+                        ).items()
+                    }
+                    write_log("[Qwen LLM] Đang generate (có thể lâu trên CPU)...")
+                    with torch.inference_mode():
+                        g_ids = self.qwen_llm.generate(
+                            **inputs, max_new_tokens=150, do_sample=False,
+                            pad_token_id=self.qwen_tokenizer.eos_token_id
+                        )
+                    res_text = self.qwen_tokenizer.batch_decode(
+                        [g[len(i):] for i, g in zip(inputs["input_ids"], g_ids)],
+                        skip_special_tokens=True
+                    )[0]
+                    write_log(f"[Qwen LLM] Raw output: {res_text[:300]}")
+                except Exception as e:
+                    write_log(f"[Qwen LLM] Error: {e}")
+                    res_text = ""
 
                 try:
                     start_i = res_text.find('{')

@@ -38,7 +38,8 @@ class Store(models.Model):
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='owned_stores')
     name = models.CharField(max_length=255)
     address = models.CharField(max_length=500)
-    phone = models.CharField(max_length=15, verbose_name="Store Phone Number", null=True, blank=True)
+    phone = models.CharField(max_length=100, verbose_name="Store Phone Number", null=True, blank=True,
+                             help_text="Nhiều số điện thoại ngăn cách bằng ' | ', VD: 0901234567 | 0281234567")
     email = models.CharField(max_length=255, verbose_name="Store Email", null=True, blank=True)
     location = models.PointField(verbose_name='Coordinates')
     STATUS_CHOICES = [('active', 'Active'), ('inactive', 'Inactive')]

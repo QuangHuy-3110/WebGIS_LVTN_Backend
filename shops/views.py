@@ -16,6 +16,7 @@ import requests
 
 from .utils import extract_gps_data
 from .models import Store, Category, StoreImage, ApprovalProfile
+from .duplicate_checker import check_duplicate
 from .serializers import (
     StoreSerializer,
     CategorySerializer,
@@ -24,7 +25,7 @@ from .serializers import (
 )
 
 ML_SERVER_URL = 'http://localhost:5050'
-ML_TIMEOUT    = 90  # seconds
+ML_TIMEOUT    = 300  # seconds — Qwen/AI có thể mất tới vài phút trên CPU
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -272,6 +273,44 @@ class AnalyzeSignView(APIView):
         return Response(result)
 
 
+def normalize_phone(raw):
+    """
+    Chuẩn hóa một số điện thoại Việt Nam về dạng 0xxxxxxxxx hoặc giữ nguyên nếu không nhận dạng được.
+    +84xxxxxxxxx → 0xxxxxxxxx
+    84xxxxxxxxx  → 0xxxxxxxxx
+    """
+    import re
+    if not raw:
+        return None
+    digits = re.sub(r'[^\d+]', '', str(raw).strip())
+    if digits.startswith('+84'):
+        digits = '0' + digits[3:]
+    elif digits.startswith('84') and len(digits) >= 10:
+        digits = '0' + digits[2:]
+    # Kiểm tra độ dài hợp lệ: 10–11 chữ số bắt đầu bằng 0
+    if re.match(r'^0\d{8,10}$', digits):
+        return digits
+    # Hotline 1800/1900: giữ nguyên
+    if re.match(r'^(1[89]00\d{4})$', digits):
+        return digits
+    return None
+
+
+def merge_phones(phone_list):
+    """
+    Nhận list số thô, chuẩn hóa từng số và gộp lại thành chuỗi ngăn cách ' | '.
+    Bỏ qua số không hợp lệ và loại trùng lặp.
+    """
+    seen = []
+    for p in phone_list:
+        # Cho phép chuỗi đã có ' | ' bên trong (ví dụ từ DB gửi lại)
+        for part in str(p).split('|'):
+            normalized = normalize_phone(part.strip())
+            if normalized and normalized not in seen:
+                seen.append(normalized)
+    return seen
+
+
 def _build_ocr_response(gps_data, ml_data):
     """Tổng hợp response thống nhất từ dữ liệu GPS và ML."""
     category_name = ml_data.get('category', '')
@@ -283,6 +322,11 @@ def _build_ocr_response(gps_data, ml_data):
 
     info      = ml_data.get('info', {})
     extracted = ml_data.get('extracted', {})   # Chứa BRAND, SERVICE, ADDRESS, PHONE, O
+
+    # Chuẩn hóa + gộp nhiều số điện thoại thành chuỗi chuẩn
+    raw_phones   = info.get('phone', [])
+    normalized_phones = merge_phones(raw_phones)  # Trả về mảng các số đã chuẩn hóa
+
     return {
         "latitude":    gps_data.get('latitude'),
         "longitude":   gps_data.get('longitude'),
@@ -292,7 +336,7 @@ def _build_ocr_response(gps_data, ml_data):
             "brand":   info.get('brand',   []),
             "service": info.get('service', []),
             "address": info.get('address', []),
-            "phone":   info.get('phone',   []),
+            "phone":   normalized_phones,   # ← trả về list để JS xử lý linh hoạt
             "email":   info.get('email',   []),
             "website": info.get('website', []),
             # Thông tin phụ / không liên quan (slogan, chứng chỉ, quảng cáo...)
@@ -316,3 +360,40 @@ class AnalyzeImageView(APIView):
             return Response({"error": "No file"}, status=400)
         result = extract_gps_data(image_file)
         return Response(result if result else {"warning": "No GPS"}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# API: Kiểm tra trùng cửa hàng  — Pipeline 5 bước
+#    POST /api/utils/check-duplicate/
+#    Body JSON: { "name": "...", "lat": 10.xxx, "lng": 105.xxx }
+# ---------------------------------------------------------------------------
+class CheckDuplicateView(APIView):
+    """
+    Kiểm tra trùng tên cửa hàng trong bán kính 15 mét xung quanh tọa độ.
+    Pipeline:
+      1. Normalize text (lowercase, remove accent, regex clean)
+      2. Retrieve candidates (PostGIS ST_DWithin 15m)
+      3. Compute similarity (partial_ratio, token_set_ratio, levenshtein)
+      4. Aggregate score (weighted)
+      5. Decision (accept / warning / reject)
+    """
+    parser_classes         = [JSONParser]
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes     = [permissions.IsAuthenticated]
+
+    def post(self, request, format=None):
+        name = request.data.get('name', '').strip()
+        try:
+            lat = float(request.data.get('lat'))
+            lng = float(request.data.get('lng'))
+        except (TypeError, ValueError):
+            return Response(
+                {"decision": "accept", "matches": [], "info": "Tọa độ không hợp lệ — bỏ qua kiểm tra vị trí."},
+                status=200
+            )
+
+        if not name:
+            return Response({"decision": "accept", "matches": []}, status=200)
+
+        result = check_duplicate(name, lat, lng, radius_m=15.0)
+        return Response(result, status=200)

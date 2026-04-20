@@ -7,12 +7,12 @@ window.hasManuallyDraggedMarker = false;
 
 // ── Lưu dữ liệu biển hiệu để cho phép đổi lựa chọn ──
 window._signData = {
-    signs:        null,   // danh sách biển hiệu từ bước 1
-    tmpPath:      null,   // đường dẫn file tạm
-    gps:          null,   // dữ liệu GPS gốc
-    currentIdx:   null,   // index biển hiệu đang được dùng
-    cardIndex:    null,   // card index trong preview
-    isFirst:      true,
+    signs: null,   // danh sách biển hiệu từ bước 1
+    tmpPath: null,   // đường dẫn file tạm
+    gps: null,   // dữ liệu GPS gốc
+    currentIdx: null,   // index biển hiệu đang được dùng
+    cardIndex: null,   // card index trong preview
+    isFirst: true,
 };
 
 
@@ -26,6 +26,7 @@ window.setupExistingMarker = function (map) {
     map.eachLayer(function (layer) {
         if (layer instanceof L.Marker) {
             window.currentMarker = layer;
+            window.currentMarker.setZIndexOffset(2000);
             if (window.currentMarker.dragging) {
                 window.currentMarker.dragging.enable();
                 window.currentMarker.on('dragend', function (e) {
@@ -52,7 +53,7 @@ window.updateMapMarker = function (lat, lng) {
             }
         });
     }
-    window.currentMarker = L.marker(latlng, { draggable: true }).addTo(window.globalLeafletMap);
+    window.currentMarker = L.marker(latlng, { draggable: true, zIndexOffset: 2000 }).addTo(window.globalLeafletMap);
     window.currentMarker.on('dragend', function (event) {
         var position = event.target.getLatLng();
         window.updateLocationInput(position.lat, position.lng);
@@ -99,10 +100,10 @@ window.loadExistingStores = function (map) {
                 map.removeLayer(window.existingStoresLayer);
             }
 
-            // Save globally for duplicate name checking
-            window.allExistingStores = data.features ? data.features : (data.results ? data.results.features || data.results : data);
-
-            checkDuplicateStore(); // Call immediately in case name is already filled
+            // Lưu để tham chiếu nội bộ (không dùng cho duplicate check nữa)
+            window.allExistingStores = data.features
+                ? data.features
+                : (data.results ? data.results.features || data.results : data);
 
             var existingStoreIcon = L.icon({
                 iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png',
@@ -115,8 +116,6 @@ window.loadExistingStores = function (map) {
 
             window.existingStoresLayer = L.geoJSON(data, {
                 pointToLayer: function (feature, latlng) {
-                    // Cửa hàng hiện tại đang chỉnh sửa sẽ có tên hoặc id, có thể bỏ qua nếu trùng vị trí không?
-                    // Ở đây cứ hiển thị tất cả
                     return L.marker(latlng, {
                         icon: existingStoreIcon,
                         title: feature.properties.name || 'Cửa hàng đã tồn tại'
@@ -131,227 +130,112 @@ window.loadExistingStores = function (map) {
                     layer.bindPopup(popupContent);
                 }
             }).addTo(map);
+
+            // Sau khi layer đã được vẽ, kích hoạt pipeline mới nếu tên đã có sẵn
+            if (window.checkDuplicateStore) window.checkDuplicateStore();
         })
         .catch(function (err) { console.error('Error fetching existing stores:', err); });
 }
 
-// ============================================================
-// 2.5. DUPLICATE STORE WARNING (NAME & GPS)
-// ============================================================
-window.checkDuplicateStore = function () {
-    if (!window.allExistingStores) return;
-    var nameInput = document.querySelector('#id_name');
-    var val = nameInput ? nameInput.value.trim().toLowerCase() : '';
 
-    var currLat = null, currLng = null;
+// ============================================================
+// 2.5. DUPLICATE STORE WARNING — Pipeline 5 bước (gọi backend)
+// ============================================================
+
+/**
+ * Lấy vị trí hiện tại tằ marker hoặc input field.
+ * Trả về { lat, lng } hoặc null nếu chưa có tọa độ.
+ */
+function _getCurrentLatLng() {
     if (window.currentMarker) {
         var pos = window.currentMarker.getLatLng();
-        currLat = pos.lat; currLng = pos.lng;
-    } else {
-        var locInput = document.querySelector('#id_location');
-        if (locInput && locInput.value) {
-            var matchObj = locInput.value.match(/POINT\(([\d\.-]+)\s+([\d\.-]+)\)/);
-            if (matchObj) {
-                currLng = parseFloat(matchObj[1]);
-                currLat = parseFloat(matchObj[2]);
-            }
-        }
+        return { lat: pos.lat, lng: pos.lng };
     }
-
-    function calcDist(lat1, lon1, lat2, lon2) {
-        if (!lat1 || !lon1 || !lat2 || !lon2) return 999999;
-        var R = 6371e3;
-        var f1 = lat1 * Math.PI / 180;
-        var f2 = lat2 * Math.PI / 180;
-        var df = (lat2 - lat1) * Math.PI / 180;
-        var dl = (lon2 - lon1) * Math.PI / 180;
-        var a = Math.sin(df / 2) * Math.sin(df / 2) + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) * Math.sin(dl / 2);
-        var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c;
-    }
-
-    var nameSuspectedIds = [];
-    var nameWarningMessages = [];
-
-    var distSuspectedIds = [];
-    var distWarningMessages = [];
-
-    var DUPLICATE_DIST_M = 15; // 15 meters
-
-    // --- Fuzzy Matching Helpers ---
-    function normalizeStr(s) {
-        return (s || "").toLowerCase()
-            .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
-            .replace(/đ/g, "d").replace(/Đ/g, "d")
-            .replace(/[^a-z0-9\s]/g, " ") // Special chars to space
-            .replace(/\s+/g, " ").trim();
-    }
-
-    function levenshteinDist(a, b) {
-        if (a.length === 0) return b.length;
-        if (b.length === 0) return a.length;
-        var matrix = [];
-        for (var i = 0; i <= b.length; i++) matrix[i] = [i];
-        for (var j = 0; j <= a.length; j++) matrix[0][j] = j;
-        for (var i = 1; i <= b.length; i++) {
-            for (var j = 1; j <= a.length; j++) {
-                if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                    matrix[i][j] = matrix[i - 1][j - 1];
-                } else {
-                    matrix[i][j] = Math.min(
-                        matrix[i - 1][j - 1] + 1, // substitution
-                        Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1) // insert, delete
-                    );
-                }
-            }
-        }
-        return matrix[b.length][a.length];
-    }
-
-    function getFuzzyScore(str1, str2) {
-        var s1 = normalizeStr(str1);
-        var s2 = normalizeStr(str2);
-        if (s1 === s2) return 1.0;
-
-        var words1 = s1.split(" ").filter(w => w.length > 0);
-        var words2 = s2.split(" ").filter(w => w.length > 0);
-        if (words1.length === 0 || words2.length === 0) return 0;
-
-        function wordSim(w1, w2) {
-            var dist = levenshteinDist(w1, w2);
-            var maxL = Math.max(w1.length, w2.length);
-            return maxL === 0 ? 1 : (1 - dist / maxL);
-        }
-
-        var score1 = 0;
-        words1.forEach(function (w1) {
-            var best = 0;
-            words2.forEach(function (w2) {
-                var sim = wordSim(w1, w2);
-                if (sim > best) best = sim;
-            });
-            score1 += best;
-        });
-        score1 /= words1.length;
-
-        var score2 = 0;
-        words2.forEach(function (w2) {
-            var best = 0;
-            words1.forEach(function (w1) {
-                var sim = wordSim(w2, w1);
-                if (sim > best) best = sim;
-            });
-            score2 += best;
-        });
-        score2 /= words2.length;
-
-        // Trọng số 70% thuộc về chuỗi có điểm cao hơn để châm chước lỗi vi phạm do dư/thiếu chữ.
-        // Ví dụ: Nhập "Cafe" vào "Cafe Giao" không nên bị đánh rớt điểm quá thấp.
-        var maxScore = Math.max(score1, score2);
-        var minScore = Math.min(score1, score2);
-        return (maxScore * 0.7) + (minScore * 0.3);
-    }
-    // --- End Fuzzy ---
-
-    window.allExistingStores.forEach(function (s) {
-        var sProp = s.properties || s;
-        var sGeom = s.geometry || s;
-        var sName = sProp.name || '';
-        var sId = sProp.id || sProp.ID || s.id;
-
-        // Match >= 80%
-        var simScore = 0;
-        if (val && sName) {
-            simScore = getFuzzyScore(val, sName);
-        }
-        var isDuplicateName = simScore >= 0.80;
-
-        if (isDuplicateName) {
-            var cLng = s.lng; var cLat = s.lat;
-            if (sGeom && sGeom.coordinates && sGeom.coordinates.length >= 2) {
-                cLng = sGeom.coordinates[0]; cLat = sGeom.coordinates[1];
-            } else if (sProp && sProp.lng) {
-                cLng = sProp.lng; cLat = sProp.lat;
-            }
-
-            var isFarEnough = false;
-            var isCloseEnough = false;
-
-            if (currLat !== null && currLng !== null && cLat && cLng) {
-                if (calcDist(currLat, currLng, cLat, cLng) < DUPLICATE_DIST_M) {
-                    isCloseEnough = true;
-                } else if (window.hasManuallyDraggedMarker) {
-                    isFarEnough = true;
-                }
-            }
-
-            if (!isFarEnough) {
-                nameSuspectedIds.push(sId);
-                if (nameWarningMessages.indexOf(sProp.name) === -1) {
-                    nameWarningMessages.push(' - ' + sProp.name);
-                }
-
-                if (isCloseEnough) {
-                    distSuspectedIds.push(sId);
-                    if (distWarningMessages.indexOf(sProp.name) === -1) {
-                        distWarningMessages.push(' - ' + sProp.name);
-                    }
-                }
-            }
-        }
-    });
-
-    // 1. Name Warning
-    var nameWarningDiv = document.getElementById('name-warning-msg');
-
-    if (!nameWarningDiv && nameInput) {
-        nameWarningDiv = document.createElement('div');
-        nameWarningDiv.id = 'name-warning-msg';
-        nameWarningDiv.style.cssText = 'color: #856404; font-weight: bold; margin-top: 5px; font-size: 13px; display: none; background: #fff3cd; padding: 5px 10px; border-radius: 4px; border: 1px solid #ffeeba;';
-        nameInput.parentNode.insertBefore(nameWarningDiv, nameInput.nextSibling);
-    }
-
-    if (nameWarningDiv) {
-        if (nameSuspectedIds.length > 0) {
-            nameWarningDiv.innerHTML = '⚠️ <b>Cảnh báo trùng TÊN:</b><br>' + nameWarningMessages.join('<br>');
-            nameWarningDiv.style.display = 'block';
-        } else {
-            nameWarningDiv.style.display = 'none';
-        }
-    }
-
-    // 2. Map (Location) Warning
-    var mapWarningDiv = document.getElementById('map-warning-msg');
     var locInput = document.querySelector('#id_location');
+    if (locInput && locInput.value) {
+        var m = locInput.value.match(/POINT\(([\d\.\-]+)\s+([\d\.\-]+)\)/);
+        if (m) return { lat: parseFloat(m[2]), lng: parseFloat(m[1]) };
+    }
+    return null;
+}
 
-    if (!mapWarningDiv && locInput) {
-        mapWarningDiv = document.createElement('div');
-        mapWarningDiv.id = 'map-warning-msg';
-        mapWarningDiv.style.cssText = 'color: #856404; font-weight: bold; margin-bottom: 10px; font-size: 13px; display: none; background: #fff3cd; padding: 5px 10px; border-radius: 4px; border: 1px solid #ffeeba;';
+/**
+ * Tạo hoặc tìm phần tử cảnh báo ngay sau name input (style cũ).
+ */
+function _ensureNameWarningDiv() {
+    var nameInput = document.querySelector('#id_name');
+    var el = document.getElementById('name-warning-msg');
+    if (!el && nameInput) {
+        el = document.createElement('div');
+        el.id = 'name-warning-msg';
+        el.style.cssText = 'color: #856404; font-weight: bold; margin-top: 5px; font-size: 13px; display: none; background: #fff3cd; padding: 5px 10px; border-radius: 4px; border: 1px solid #ffeeba;';
+        nameInput.parentNode.insertBefore(el, nameInput.nextSibling);
+    }
+    return el;
+}
 
-        var mapContainer = null;
-        if (window.globalLeafletMap) {
-            mapContainer = window.globalLeafletMap.getContainer();
-        }
-
+/**
+ * Tạo hoặc tìm phần tử cảnh báo bên trên bản đồ (style cũ).
+ */
+function _ensureMapWarningDiv() {
+    var el = document.getElementById('map-warning-msg');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'map-warning-msg';
+        el.style.cssText = 'color: #856404; font-weight: bold; margin-bottom: 10px; font-size: 13px; display: none; background: #fff3cd; padding: 5px 10px; border-radius: 4px; border: 1px solid #ffeeba;';
+        var mapContainer = window.globalLeafletMap ? window.globalLeafletMap.getContainer() : null;
+        var locInput = document.querySelector('#id_location');
         if (mapContainer && mapContainer.parentNode) {
-            mapContainer.parentNode.insertBefore(mapWarningDiv, mapContainer);
+            mapContainer.parentNode.insertBefore(el, mapContainer);
+        } else if (locInput) {
+            locInput.parentNode.insertBefore(el, locInput.nextSibling);
+        }
+    }
+    return el;
+}
+
+/**
+ * Hiển thị kết quả từ API pipeline — dùng lại style hiển thị cũ.
+ * @param {Object} result  - {decision, matches}
+ */
+function _renderDuplicateResult(result) {
+    var decision = result.decision || 'accept';
+    var matches = result.matches || [];
+
+    // Danh sách tên các cửa hàng bị nghi trùng (warning hoặc reject)
+    var suspectedNames = matches
+        .filter(function (m) { return m.decision !== 'accept'; })
+        .map(function (m) { return ' - ' + m.name; });
+
+    var suspectedIds = matches
+        .filter(function (m) { return m.decision !== 'accept'; })
+        .map(function (m) { return m.id; });
+
+    // ---- Name Warning Div (style cũ: vàng) --------------------------------
+    var nameWarningDiv = _ensureNameWarningDiv();
+    if (nameWarningDiv) {
+        if (decision === 'accept' || suspectedNames.length === 0) {
+            nameWarningDiv.style.display = 'none';
         } else {
-            locInput.parentNode.insertBefore(mapWarningDiv, locInput.nextSibling);
+            nameWarningDiv.innerHTML = '⚠️ <b>Cảnh báo trùng TÊN:</b><br>' + suspectedNames.join('<br>');
+            nameWarningDiv.style.display = 'block';
         }
     }
 
+    // ---- Map Warning Div (style cũ: vàng) ---------------------------------
+    var mapWarningDiv = _ensureMapWarningDiv();
     if (mapWarningDiv) {
-        if (distSuspectedIds.length > 0) {
-            mapWarningDiv.innerHTML = '⚠️ <b>Phát hiện vị trí kéo cờ RẤT GẦN với cửa hàng đang bị trùng tên:</b><br>' + distWarningMessages.join('<br>');
+        var hasLoc = _getCurrentLatLng() !== null;
+        if (hasLoc && suspectedIds.length > 0 && decision !== 'accept') {
+            mapWarningDiv.innerHTML = '⚠️ <b>Phát hiện vị trí kéo cờ RẤT GẦN với cửa hàng đang bị trùng tên:</b><br>' + suspectedNames.join('<br>');
             mapWarningDiv.style.display = 'block';
         } else {
             mapWarningDiv.style.display = 'none';
         }
     }
 
-    var mapPingYellowIds = distSuspectedIds.length > 0 ? distSuspectedIds : nameSuspectedIds;
-    window.hasDuplicateWarning = nameSuspectedIds.length > 0;
+    // ---- Map marker highlight (style cũ: chỉ grey / yellow) ---------------
+    window.hasDuplicateWarning = (decision !== 'accept');
 
     if (window.existingStoresLayer) {
         var existingStoreIcon = L.icon({
@@ -367,33 +251,91 @@ window.checkDuplicateStore = function () {
 
         window.existingStoresLayer.eachLayer(function (layer) {
             var featureId = layer.feature.properties.id || layer.feature.properties.ID || layer.feature.id;
-            if (nameSuspectedIds.indexOf(featureId) !== -1) {
+            if (suspectedIds.indexOf(featureId) !== -1) {
                 layer.setIcon(duplicateStoreIcon);
-                // Also bump z-index and open popup
                 layer.setZIndexOffset(1000);
             } else {
                 layer.setIcon(existingStoreIcon);
                 layer.setZIndexOffset(0);
             }
         });
+        
+        // Ensure currentMarker stays strictly on top
+        if (window.currentMarker) {
+            window.currentMarker.setZIndexOffset(9999);
+        }
     }
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-    // 1. Fetch stores early to ensure immediate name duplicate validation
-    if (!window.allExistingStores) {
-        fetch('/api/stores/')
-            .then(function (res) { return res.json(); })
-            .then(function (data) {
-                window.allExistingStores = data.features ? data.features : (data.results ? data.results.features || data.results : data);
+/**
+ * checkDuplicateStore() — debounced, gọi API backend pipeline 5 bước.
+ * Chỉ hoạt động trên trang /add/.
+ */
+var _dupDebounceTimer = null;
+
+window.checkDuplicateStore = function () {
+    // Chỉ chạy khi thêm mới
+    if (window.location.pathname.indexOf('/add/') === -1) return;
+
+    // Debounce 400ms
+    if (_dupDebounceTimer) clearTimeout(_dupDebounceTimer);
+    _dupDebounceTimer = setTimeout(function () {
+        var nameInput = document.querySelector('#id_name');
+        var name = nameInput ? nameInput.value.trim() : '';
+
+        // Nếu tên quá ngắn (< 2 ký tự), ẩn cảnh báo và bỏ qua
+        if (name.length < 2) {
+            _renderDuplicateResult({ decision: 'accept', matches: [] });
+            return;
+        }
+
+        var coords = _getCurrentLatLng();
+        if (!coords) {
+            // Chưa có tọa độ — không thể check
+            _renderDuplicateResult({ decision: 'accept', matches: [] });
+            return;
+        }
+
+        // Hiển thị trạng thái đang kiểm tra
+        var nameDiv = _ensureNameWarningDiv();
+        if (nameDiv) {
+            nameDiv.style.display = 'block';
+            nameDiv.innerHTML = '🔄 Đang kiểm tra trùng lặp trong bán kính 15 mét...';
+        }
+
+        fetch('/api/utils/check-duplicate/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+            body: JSON.stringify({ name: name, lat: coords.lat, lng: coords.lng }),
+        })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
             })
-            .catch(function (err) { console.error('Early fetch error:', err); });
-    }
+            .then(function (data) {
+                _renderDuplicateResult(data);
+                window.hasDuplicateWarning = (data.decision !== 'accept');
+                window._lastDuplicateDecision = data.decision;
+            })
+            .catch(function (err) {
+                console.error('[DupCheck] Lỗi:', err);
+                // Lỗi mạng — ẩn cảnh báo, không block submit
+                _renderDuplicateResult({ decision: 'accept', matches: [] });
+            });
+    }, 400);
+};
+
+document.addEventListener('DOMContentLoaded', function () {
+    // 1a. Không cần fetch pre-load stores nữa vì pipeline backend tự query theo tọa độ
+    // (Giữ lại để load markers xám lên bản đồ, KHÔNG dùng cho duplicate check)
 
     // 2. Attach Name Input Listeners
     var nameInput = document.querySelector('#id_name');
     if (nameInput) {
-        // Evaluate as user types AND when they click away
+        // Kích hoạt khi gõ VÀ khi blur
         ['input', 'blur'].forEach(function (evt) {
             nameInput.addEventListener(evt, function () {
                 if (window.checkDuplicateStore) window.checkDuplicateStore();
@@ -401,19 +343,25 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // 3. Form Submit confirmation
+    // 3. Form Submit — chỉ cảnh báo, không block hoàn toàn
     var form = document.getElementById('store_form');
     if (form) {
         form.addEventListener('submit', function (e) {
-            if (window.hasDuplicateWarning) {
-                var c = confirm("⚠️ Hệ thống nghi ngờ cửa hàng này bị TRÙNG LẶP (tên hoặc tọa độ) với một cửa hàng khác!\n\nBạn có CHẮC CHẮN muốn tiếp tục lưu?");
+            var dec = window._lastDuplicateDecision || 'accept';
+            if (dec === 'reject' || dec === 'warning') {
+                var msg = dec === 'reject'
+                    ? '🚫 Cảnh báo trùng lặp cao!\n\nHệ thống phát hiện cửa hàng này RẤT CÓ KHẢ NĂNG đã tồn tại trong bán kính 15 mét.\n\nBạn có chắc chắn muốn tiếp tục lưu không?'
+                    : '⚠️ Cảnh báo trùng lặp!\n\nHệ thống nghi ngờ cửa hàng này CÓ THỂ BỊ TRÙNG với một cửa hàng gần đó trong bán kính 15 mét.\n\nBạn có chắc chắn muốn tiếp tục lưu không?';
+                var c = confirm(msg);
                 if (!c) {
                     e.preventDefault();
                 }
             }
+            // dec === 'accept': cho qua bình thường
         });
     }
 });
+
 
 // ============================================================
 // 3. IMAGE PREVIEW ON UPLOAD
@@ -509,7 +457,7 @@ function initAdminImagePreview() {
         removeBtn.innerHTML = '&times;';
         removeBtn.style.cssText = 'position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;background:#dc3545;color:white;border:none;font-weight:bold;font-size:16px;cursor:pointer;line-height:22px;padding:0;z-index:10;box-shadow:0 2px 4px rgba(0,0,0,0.3);';
         removeBtn.title = 'Xóa ảnh này khỏi danh sách tải lên';
-        removeBtn.addEventListener('click', function(e) {
+        removeBtn.addEventListener('click', function (e) {
             e.stopPropagation();
             var imageInput = document.querySelector('#id_quick_image') || document.querySelector('input[name="quick_image"]');
             if (imageInput && imageInput.files && window.DataTransfer) {
@@ -525,7 +473,7 @@ function initAdminImagePreview() {
                 imageInput.files = dt.files;
             }
             card.remove();
-            
+
             if (grid.children.length === 0) {
                 var wrapper = document.getElementById('admin-preview-wrapper');
                 if (wrapper) wrapper.style.display = 'none';
@@ -616,7 +564,7 @@ function initAdminImagePreview() {
         // nên ta cần reset giao diện để phản ánh chính xác mảng files được chọn.
         if (previewGrid) previewGrid.innerHTML = '';
         totalCards = 0;
-        
+
         var wrapperObj = document.getElementById('admin-preview-wrapper');
         if (wrapperObj) wrapperObj.style.display = 'block';
 
@@ -659,43 +607,43 @@ function initAdminImagePreview() {
             body: fd,
             headers: { 'X-CSRFToken': getCookie('csrftoken') }
         })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (badge) {
-                badge.style.background = '#28a745';
-                badge.style.color = 'white';
-                badge.textContent = 'Analyzed & Pending';
-            }
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (badge) {
+                    badge.style.background = '#28a745';
+                    badge.style.color = 'white';
+                    badge.textContent = 'Analyzed & Pending';
+                }
 
-            // ── Nhiều biển hiệu? Mở dialog chọn ─────────────────────────────
-            if (data.multiple_signs && data.signs && data.signs.length > 1) {
-                showSignSelectionDialog(data.signs, data.tmp_path, data.gps, cardIndex, isFirst);
-                return;
-            }
+                // ── Nhiều biển hiệu? Mở dialog chọn ─────────────────────────────
+                if (data.multiple_signs && data.signs && data.signs.length > 1) {
+                    showSignSelectionDialog(data.signs, data.tmp_path, data.gps, cardIndex, isFirst);
+                    return;
+                }
 
-            // ── Chỉ 1 biển hiệu: điền ngay ──────────────────────────────────
-            if (isFirst) {
-                applyOcrData(data, cardIndex);
-            }
-        })
-        .catch(function (err) {
-            console.error('Upload error:', err);
-            if (badge) {
-                badge.style.background = '#dc3545';
-                badge.style.color = 'white';
-                badge.textContent = 'Upload failed';
-            }
-        });
+                // ── Chỉ 1 biển hiệu: điền ngay ──────────────────────────────────
+                if (isFirst) {
+                    applyOcrData(data, cardIndex);
+                }
+            })
+            .catch(function (err) {
+                console.error('Upload error:', err);
+                if (badge) {
+                    badge.style.background = '#dc3545';
+                    badge.style.color = 'white';
+                    badge.textContent = 'Upload failed';
+                }
+            });
     }
 
     // ---- Hiển thị dialog chọn biển hiệu --------------------------------
     function showSignSelectionDialog(signs, tmpPath, gps, cardIndex, isFirst) {
         // Lưu dữ liệu vào global (cho nút "Đổi biển hiệu" dùng lại)
-        window._signData.signs     = signs;
-        window._signData.tmpPath   = tmpPath;
-        window._signData.gps       = gps;
+        window._signData.signs = signs;
+        window._signData.tmpPath = tmpPath;
+        window._signData.gps = gps;
         window._signData.cardIndex = cardIndex;
-        window._signData.isFirst   = isFirst;
+        window._signData.isFirst = isFirst;
 
         // Xóa dialog cũ nếu có
         var existDlg = document.getElementById('sign-select-dialog');
@@ -728,7 +676,7 @@ function initAdminImagePreview() {
         var closeBtn = document.createElement('button');
         closeBtn.textContent = '✕';
         closeBtn.style.cssText = 'background:none;border:none;font-size:20px;cursor:pointer;color:#999;';
-        closeBtn.onclick = function() { overlay.remove(); };
+        closeBtn.onclick = function () { overlay.remove(); };
         header.appendChild(title);
         header.appendChild(closeBtn);
         dialog.appendChild(header);
@@ -741,7 +689,7 @@ function initAdminImagePreview() {
         var selectedIndex = curIdx !== null ? curIdx : signs[0].index;
         var cards = [];
 
-        signs.forEach(function(sign, i) {
+        signs.forEach(function (sign, i) {
             var isCurrent = sign.index === curIdx;
             var isSelected = sign.index === selectedIndex;
 
@@ -780,11 +728,11 @@ function initAdminImagePreview() {
             confTag.textContent = 'Biển ' + (i + 1) + ': ' + sign.conf_pct;
             card.appendChild(confTag);
 
-            card.onclick = function() {
+            card.onclick = function () {
                 selectedIndex = sign.index;
-                cards.forEach(function(c, ci) {
+                cards.forEach(function (c, ci) {
                     c.style.borderColor = ci === i ? '#3498db' : '#ddd';
-                    c.style.background  = ci === i ? '#ebf5fb' : '#f9f9f9';
+                    c.style.background = ci === i ? '#ebf5fb' : '#f9f9f9';
                 });
                 updateConfirmBtn();
             };
@@ -812,13 +760,13 @@ function initAdminImagePreview() {
         }
         updateConfirmBtn();
 
-        confirmBtn.onmouseover = function() {
+        confirmBtn.onmouseover = function () {
             if (!confirmBtn.disabled) confirmBtn.style.background = '#1a6fa8';
         };
-        confirmBtn.onmouseout = function() {
+        confirmBtn.onmouseout = function () {
             if (!confirmBtn.disabled) confirmBtn.style.background = '#2980b9';
         };
-        confirmBtn.onclick = function() {
+        confirmBtn.onclick = function () {
             if (confirmBtn.disabled) return;
             overlay.remove();
             analyzeSelectedSign(window._signData.tmpPath, selectedIndex, gps, cardIndex, isFirst);
@@ -846,33 +794,33 @@ function initAdminImagePreview() {
                 'X-CSRFToken': getCookie('csrftoken')
             }
         })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (badge) {
-                badge.style.background = '#28a745';
-                badge.style.color = 'white';
-                badge.textContent = 'Analyzed & Pending';
-            }
-            // Gộp thêm GPS đã có
-            if (gps) {
-                if (!data.latitude   && gps.latitude)    data.latitude    = gps.latitude;
-                if (!data.longitude  && gps.longitude)   data.longitude   = gps.longitude;
-                if (!data.address_gps && gps.address_gps) data.address_gps = gps.address_gps;
-            }
-            // Cập nhật tmp_path mới nhất từ server (server giữ lại để đổi biển hiệu)
-            if (data.tmp_path) window._signData.tmpPath = data.tmp_path;
-            window._signData.currentIdx = boxIndex;
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (badge) {
+                    badge.style.background = '#28a745';
+                    badge.style.color = 'white';
+                    badge.textContent = 'Analyzed & Pending';
+                }
+                // Gộp thêm GPS đã có
+                if (gps) {
+                    if (!data.latitude && gps.latitude) data.latitude = gps.latitude;
+                    if (!data.longitude && gps.longitude) data.longitude = gps.longitude;
+                    if (!data.address_gps && gps.address_gps) data.address_gps = gps.address_gps;
+                }
+                // Cập nhật tmp_path mới nhất từ server (server giữ lại để đổi biển hiệu)
+                if (data.tmp_path) window._signData.tmpPath = data.tmp_path;
+                window._signData.currentIdx = boxIndex;
 
-            if (isFirst) applyOcrData(data, cardIndex);
-        })
-        .catch(function(err) {
-            console.error('Analyze sign error:', err);
-            if (badge) {
-                badge.style.background = '#dc3545';
-                badge.style.color = 'white';
-                badge.textContent = 'Thất bại';
-            }
-        });
+                if (isFirst) applyOcrData(data, cardIndex);
+            })
+            .catch(function (err) {
+                console.error('Analyze sign error:', err);
+                if (badge) {
+                    badge.style.background = '#dc3545';
+                    badge.style.color = 'white';
+                    badge.textContent = 'Thất bại';
+                }
+            });
     }
 
     // ---- Áp dụng dữ liệu OCR vào form ----------------------------------
@@ -901,22 +849,16 @@ function initAdminImagePreview() {
         var nameFilled = autoFillInput('#id_name', ci.brand ? ci.brand[0] : null);
         addSuggestions('#id_name', ci.brand); // Thêm gợi ý nếu có nhiều thương hiệu
 
-        // Kích hoạt ngay cảnh báo trùng tên (thay vì chờ user click/blur)
+        // Kích hoạt kiểm tra trùng ngay sau khi tên + tọa độ đã có
+        // (tọa độ EXIF đã được set ở bước 1 qua updateMapMarker)
         if (nameFilled && window.checkDuplicateStore) {
-            // Đợi stores tải xong trước (nếu chưa tải thì thử lại)
-            var _dupRetry = 0;
-            var _tryDupCheck = function() {
-                if (window.allExistingStores) {
-                    window.checkDuplicateStore();
-                } else if (_dupRetry++ < 10) {
-                    setTimeout(_tryDupCheck, 300); // thử lại sau 300ms
-                }
-            };
-            setTimeout(_tryDupCheck, 150);
+            window.checkDuplicateStore();
         }
 
         // 3b. Điện thoại ← PHONE
-        autoFillInput('#id_phone', ci.phone ? ci.phone[0] : null);
+        // Nếu là mảng thì gộp lại bằng ' | ', nếu là chuỗi thì dùng luôn
+        var fullPhone = Array.isArray(ci.phone) ? ci.phone.join(' | ') : ci.phone;
+        autoFillInput('#id_phone', fullPhone);
         addSuggestions('#id_phone', ci.phone);
 
         // 3c. Email ← EMAIL
@@ -939,12 +881,12 @@ function initAdminImagePreview() {
 
         // 3f. Thông tin phụ (O — slogan, chứng chỉ...) → gợi ý cho cả tên lẫn mô tả
         if (ci.other && ci.other.length) {
-            addSuggestions('#id_name',     filterForName(ci.other, ci));   // đã lọc phone/address
+            addSuggestions('#id_name', filterForName(ci.other, ci));   // đã lọc phone/address
             addSuggestions('#id_describe', ci.other);                       // mô tả: hiển thị tất cả
         }
 
         // 3g. Raw texts → gợi ý cho tên (lọc) và mô tả (không lọc)
-        addSuggestions('#id_name',     filterForName(data.raw_texts || [], ci));
+        addSuggestions('#id_name', filterForName(data.raw_texts || [], ci));
         addSuggestions('#id_describe', data.raw_texts);
 
         // 4. Chip biển hiệu đang dùng + nút đổi
@@ -967,23 +909,23 @@ function initAdminImagePreview() {
     }
 
     // ---- Lọc phone/address khỏi danh sách gợi ý cho ô Tên ----------
-    var _PHONE_RE_ADM   = /^[\d\s.\-+()ः]{7,}$|^0\d{8,9}$|^\+84\d{8,9}$/;
+    var _PHONE_RE_ADM = /^[\d\s.\-+()ः]{7,}$|^0\d{8,9}$|^\+84\d{8,9}$/;
     var _ADDRESS_RE_ADM = /\d+\/\d*|(nguyễn|trần|lê|võ|phạm|hoàng|huỳnh|đinh|phan)|(^đường|phường|quận|xã|huyện|tp\.|thành phố|tỉnh|khu |nối dài|ấp |thị trấn)/i;
 
     function isPhoneOrAddressAdmin(text) {
         if (!text) return false;
         var t = text.trim();
-        if (_PHONE_RE_ADM.test(t))   return true;
+        if (_PHONE_RE_ADM.test(t)) return true;
         if (_ADDRESS_RE_ADM.test(t)) return true;
         return false;
     }
 
     function filterForName(arr, ci) {
-        var knownPhones   = (ci.phone   || []).concat(ci.address || []);
-        return (arr || []).filter(function(v) {
+        var knownPhones = (ci.phone || []).concat(ci.address || []);
+        return (arr || []).filter(function (v) {
             if (!v) return false;
             if (knownPhones.indexOf(v) !== -1) return false;  // trùng với phone/address đã biết
-            if (isPhoneOrAddressAdmin(v))       return false;  // trông như phone hoặc địa chỉ
+            if (isPhoneOrAddressAdmin(v)) return false;  // trông như phone hoặc địa chỉ
             return true;
         });
     }
@@ -1047,9 +989,9 @@ function initAdminImagePreview() {
             'padding:8px 14px;font-size:12px;font-weight:700;',
             'cursor:pointer;white-space:nowrap;flex-shrink:0;transition:background 0.2s;'
         ].join('');
-        changeBtn.onmouseover = function() { changeBtn.style.background = '#0369a1'; };
-        changeBtn.onmouseout  = function() { changeBtn.style.background = '#0284c7'; };
-        changeBtn.onclick = function() {
+        changeBtn.onmouseover = function () { changeBtn.style.background = '#0369a1'; };
+        changeBtn.onmouseout = function () { changeBtn.style.background = '#0284c7'; };
+        changeBtn.onclick = function () {
             var sd = window._signData;
             if (sd.signs && sd.tmpPath) {
                 showSignSelectionDialog(sd.signs, sd.tmpPath, sd.gps, sd.cardIndex, sd.isFirst);
@@ -1099,6 +1041,20 @@ function initAdminImagePreview() {
         var existingTags = Array.from(container.querySelectorAll('.ml-sugg-btn')).map(function (btn) {
             return btn.textContent;
         });
+
+        // Đảm bảo suggestionsArray là một mảng
+        if (!Array.isArray(suggestionsArray)) {
+            if (typeof suggestionsArray === 'string' && suggestionsArray.trim()) {
+                // Nếu chuỗi có chứa dấu ngăn cách '|', tách ra thành mảng
+                if (suggestionsArray.includes('|')) {
+                    suggestionsArray = suggestionsArray.split('|').map(function (s) { return s.trim(); });
+                } else {
+                    suggestionsArray = [suggestionsArray.trim()];
+                }
+            } else {
+                return;
+            }
+        }
 
         suggestionsArray.forEach(function (text) {
             if (text && existingTags.indexOf(text) === -1) {

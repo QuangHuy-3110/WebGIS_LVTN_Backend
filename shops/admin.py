@@ -108,7 +108,7 @@ class StoreAdmin(LeafletGeoAdmin):
     settings_overrides = {'DEFAULT_CENTER': (10.0452, 105.7469), 'DEFAULT_ZOOM': 13}
 
     class Media:
-        js = ('js/admin_auto_gps.js', 'js/admin_bulk_delete.js')
+        js = ('js/admin_auto_gps_v2.js', 'js/admin_bulk_delete.js')
 
 
 
