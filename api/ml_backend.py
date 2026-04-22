@@ -50,17 +50,18 @@ def write_log(text):
 # CẤU HÌNH ĐƯỜNG DẪN
 # ==============================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 YOLO_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'Best_Medium_640_50e_10p_auto_20260119_1637.pt')
 MODEL_DIR = os.path.join(BASE_DIR, 'models')
 DET_PATH  = os.path.join(MODEL_DIR, 'ch_PP-OCRv3_det_infer')
 REC_PATH  = os.path.join(MODEL_DIR, 'en_PP-OCRv4_rec_infer')
 CLS_PATH  = os.path.join(MODEL_DIR, 'ch_ppocr_mobile_v2.0_cls_infer')
-VIETOCR_WEIGHT_PATH = os.path.join(MODEL_DIR, 'vietocr_v2_stage1_3103_0917.pth')
+VIETOCR_WEIGHT_PATH = os.path.join(MODEL_DIR, 'vietocr_FINAL_STAGE3_1103_0650.pth')
 CLASSIFIER_PATH     = os.path.join(BASE_DIR, "model_phanloai_danhmuc_v7", "Linear_SVC_model.pkl")
 
 # [MODEL LORA]
 BASE_MODEL_ID   = "Qwen/Qwen2.5-0.5B-Instruct"
-QWEN_ADAPTER_PATH = os.path.join(MODEL_DIR, 'qwen_0.5b_adapter_final_Step1_v6_hybrid')
+QWEN_ADAPTER_PATH = os.path.join(MODEL_DIR, "qwen_0.5b_adapter_final_Step1_v6_hybrid")
 
 
 # ==============================================================================
@@ -226,163 +227,137 @@ class OCRBackend:
     # ------------------------------------------------------------------
     def detect_robust(self, img):
         h, w = img.shape[:2]
-        sf = min(1.0, 1028 / max(h, w))
-        img_s = cv2.resize(img, (int(w * sf), int(h * sf))) if sf < 1.0 else img
+        sf = min(1.0, 1024 / max(h, w))
+        img_s = cv2.resize(img, (int(w*sf), int(h*sf))) if sf < 1.0 else img
+        
+        raw_boxes = []
         res = self.paddle.ocr(img_s, cls=True, det=True, rec=False)
-
-        if not res or not res[0]:
-            return []
-
-        raw_boxes  = [np.array(b, dtype="float32") / sf for b in res[0]]
-        final_boxes = []
-
-        for i, box in enumerate(raw_boxes):
-            box_h         = max(np.linalg.norm(box[0] - box[3]), np.linalg.norm(box[1] - box[2]))
-            desired_pad_top = box_h * 0.20
-            desired_pad_bot = box_h * 0.20
-
-            top_y   = min(box[0][1], box[1][1])
-            bot_y   = max(box[2][1], box[3][1])
-            left_x  = min(box[0][0], box[3][0])
-            right_x = max(box[1][0], box[2][0])
-
-            for j, other_box in enumerate(raw_boxes):
-                if i == j:
-                    continue
-                o_top_y  = min(other_box[0][1], other_box[1][1])
-                o_bot_y  = max(other_box[2][1], other_box[3][1])
-                o_left_x = min(other_box[0][0], other_box[3][0])
-                o_right_x= max(other_box[1][0], other_box[2][0])
-
-                if not (right_x < o_left_x or left_x > o_right_x):
-                    if o_bot_y <= top_y:
-                        dist = top_y - o_bot_y
-                        desired_pad_top = min(desired_pad_top, max(0, dist - 1.0))
-                    elif o_top_y >= bot_y:
-                        dist = o_top_y - bot_y
-                        desired_pad_bot = min(desired_pad_bot, max(0, dist - 1.0))
-
-            new_box = box.copy()
-            new_box[0][1] -= desired_pad_top
-            new_box[1][1] -= desired_pad_top
-            new_box[2][1] += desired_pad_bot
-            new_box[3][1] += desired_pad_bot
-            final_boxes.append(new_box)
-
-        return final_boxes
+        if res and res[0]:
+            raw_boxes = [np.array(b, dtype="float32") / sf for b in res[0]]
+        
+        boxes = []
+        if raw_boxes:
+            for i, box in enumerate(raw_boxes):
+                box_h = max(np.linalg.norm(box[0]-box[3]), np.linalg.norm(box[1]-box[2]))
+                
+                desired_pad_top = box_h * 0.20  
+                desired_pad_bot = box_h * 0.10  
+                
+                top_y = min(box[0][1], box[1][1])
+                bot_y = max(box[2][1], box[3][1])
+                left_x = min(box[0][0], box[3][0])
+                right_x = max(box[1][0], box[2][0])
+                
+                for j, other_box in enumerate(raw_boxes):
+                    if i == j: continue
+                    o_top_y = min(other_box[0][1], other_box[1][1])
+                    o_bot_y = max(other_box[2][1], other_box[3][1])
+                    o_left_x = min(other_box[0][0], other_box[3][0])
+                    o_right_x = max(other_box[1][0], other_box[2][0])
+                    
+                    if not (right_x < o_left_x or left_x > o_right_x):
+                        if o_bot_y <= top_y:
+                            dist = top_y - o_bot_y
+                            desired_pad_top = min(desired_pad_top, max(0, dist - 1.0))
+                        elif o_top_y >= bot_y:
+                            dist = o_top_y - bot_y
+                            desired_pad_bot = min(desired_pad_bot, max(0, dist - 1.0))
+                
+                new_box = box.copy()
+                new_box[0][1] -= desired_pad_top  
+                new_box[1][1] -= desired_pad_top  
+                new_box[2][1] += desired_pad_bot  
+                new_box[3][1] += desired_pad_bot  
+                
+                boxes.append(new_box)
+                
+        return boxes
 
     # ------------------------------------------------------------------
     # LINE GROUPING
     # ------------------------------------------------------------------
     def fit_line_and_group(self, boxes):
-        if not boxes:
-            return []
-        infos = [
-            {
-                'c': np.mean(b, axis=0),
-                'h': max(np.linalg.norm(b[0] - b[3]), np.linalg.norm(b[1] - b[2])),
-                'b': b
-            }
-            for b in boxes
-        ]
-        infos.sort(key=lambda x: x['c'][0])
-
-        used = set()
-        lines = []
-        for i, s in enumerate(infos):
-            if i in used:
-                continue
-            line = [s['b']]
-            used.add(i)
-            last = s
-            for j in range(i + 1, len(infos)):
-                if j in used:
-                    continue
-                c = infos[j]
-                if (min(c['h'], last['h']) / max(c['h'], last['h'])) < 0.5:
-                    continue
-                if abs(c['c'][1] - last['c'][1]) > max(c['h'], last['h']) * 0.9:
-                    continue
-                if (c['c'][0] - last['c'][0]) > last['h'] * 5.0:
-                    continue
-                line.append(c['b'])
-                used.add(j)
-                last = c
-            lines.append(line)
-
-        line_stats = []
-        for ln in lines:
-            avg_y = sum([np.mean(b, axis=0)[1] for b in ln]) / len(ln)
-            min_x = min([np.min(b[:, 0]) for b in ln])
-            avg_h = sum([max(np.linalg.norm(b[0] - b[3]), np.linalg.norm(b[1] - b[2])) for b in ln]) / len(ln)
-            line_stats.append({'line': ln, 'y': avg_y, 'x': min_x, 'h': avg_h})
-
-        line_stats.sort(key=lambda item: item['y'])
-
-        rows = []
-        current_row = []
-        for item in line_stats:
-            if not current_row:
-                current_row.append(item)
+        """
+        THUẬT TOÁN ĐỈNH CAO: HYBRID LINE GROUPING (Gom Y - Cắt X - Quét Size)
+        """
+        if not boxes: return []
+        
+        infos = []
+        for b in boxes:
+            pts = np.array(b)
+            min_x, max_x = np.min(pts[:, 0]), np.max(pts[:, 0])
+            min_y, max_y = np.min(pts[:, 1]), np.max(pts[:, 1])
+            cx = (min_x + max_x) / 2.0
+            cy = (min_y + max_y) / 2.0
+            h = max_y - min_y
+            infos.append({'b': b, 'cx': cx, 'cy': cy, 'h': h, 'min_x': min_x, 'max_x': max_x})
+            
+        infos.sort(key=lambda x: x['cy'])
+        y_bands = []
+        current_band = []
+        
+        for info in infos:
+            if not current_band:
+                current_band.append(info)
             else:
-                row_y = sum([i2['y'] for i2 in current_row]) / len(current_row)
-                row_h = sum([i2['h'] for i2 in current_row]) / len(current_row)
-                if abs(item['y'] - row_y) < row_h * 0.5:
-                    current_row.append(item)
+                avg_cy = sum(item['cy'] for item in current_band) / len(current_band)
+                avg_h = sum(item['h'] for item in current_band) / len(current_band)
+                if abs(info['cy'] - avg_cy) <= (max(info['h'], avg_h) * 0.6):
+                    current_band.append(info)
                 else:
-                    rows.append(current_row)
-                    current_row = [item]
-        if current_row:
-            rows.append(current_row)
-
-        sorted_lines = []
-        for row in rows:
-            row.sort(key=lambda item: item['x'])
-            for item in row:
-                sorted_lines.append(item['line'])
-        return sorted_lines
+                    y_bands.append(current_band)
+                    current_band = [info]
+        if current_band:
+            y_bands.append(current_band)
+            
+        final_lines = []
+        for band in y_bands:
+            band.sort(key=lambda item: item['cx'])
+            current_line = [band[0]]
+            
+            for i in range(1, len(band)):
+                prev_box = current_line[-1]
+                curr_box = band[i]
+                
+                gap = curr_box['min_x'] - prev_box['max_x']
+                avg_h = (prev_box['h'] + curr_box['h']) / 2.0
+                
+                min_h = min(prev_box['h'], curr_box['h'])
+                max_h = max(prev_box['h'], curr_box['h'])
+                size_ratio = max_h / (min_h + 1e-5)
+                
+                if size_ratio > 2.0 or gap > avg_h * 1.2:
+                    final_lines.append([item['b'] for item in current_line])
+                    current_line = [curr_box]
+                else:
+                    current_line.append(curr_box)
+                    
+            if current_line:
+                final_lines.append([item['b'] for item in current_line])
+                
+        return final_lines
 
     # ------------------------------------------------------------------
     # PERSPECTIVE CROP PER LINE
     # ------------------------------------------------------------------
     def get_regression_rectified_crop(self, image, line_boxes):
-        if not line_boxes:
-            return None, None
-        pts  = np.concatenate(line_boxes, axis=0)
+        if not line_boxes: return None, None
+        pts = np.concatenate(line_boxes, axis=0)
         tops = np.array([b[0] for b in line_boxes] + [b[1] for b in line_boxes], dtype=np.float32)
         bots = np.array([b[3] for b in line_boxes] + [b[2] for b in line_boxes], dtype=np.float32)
         [vxt, vyt, x0t, y0t] = cv2.fitLine(tops, cv2.DIST_L2, 0, 0.01, 0.01).flatten()
         [vxb, vyb, x0b, y0b] = cv2.fitLine(bots, cv2.DIST_L2, 0, 0.01, 0.01).flatten()
-        minx, maxx = np.min(pts[:, 0]), np.max(pts[:, 0])
-
-        def gy(x, vx, vy, x0, y0):
-            return y0 if abs(vx) < 1e-2 else y0 + (vy / vx) * (x - x0)
-
-        src = np.array([
-            [minx, gy(minx, vxt, vyt, x0t, y0t)],
-            [maxx, gy(maxx, vxt, vyt, x0t, y0t)],
-            [maxx, gy(maxx, vxb, vyb, x0b, y0b)],
-            [minx, gy(minx, vxb, vyb, x0b, y0b)],
-        ], dtype="float32")
-
-        wn = np.linalg.norm(src[1] - src[0])
-        hn = max(np.linalg.norm(src[3] - src[0]), np.linalg.norm(src[2] - src[1]))
-        if hn > 5000 or wn > 5000 or hn <= 0 or wn <= 0:
-            return None, None
-
-        pw, ph = int(wn * 0.05), int(hn * 0.2)
-        dst = np.array([[pw, ph], [wn + pw, ph], [wn + pw, hn + ph], [pw, hn + ph]], dtype="float32")
-        try:
-            return (
-                src.astype(int),
-                cv2.warpPerspective(
-                    image, cv2.getPerspectiveTransform(src, dst),
-                    (int(wn + pw * 2), int(hn + ph * 2)),
-                    flags=cv2.INTER_CUBIC, borderValue=(255, 255, 255)
-                )
-            )
-        except Exception:
-            return None, None
+        minx, maxx = np.min(pts[:,0]), np.max(pts[:,0])
+        def gy(x, vx, vy, x0, y0): return y0 if abs(vx)<1e-2 else y0+(vy/vx)*(x-x0)
+        
+        src = np.array([[minx, gy(minx, vxt, vyt, x0t, y0t)], [maxx, gy(maxx, vxt, vyt, x0t, y0t)],
+                        [maxx, gy(maxx, vxb, vyb, x0b, y0b)], [minx, gy(minx, vxb, vyb, x0b, y0b)]], dtype="float32")
+        wn = np.linalg.norm(src[1]-src[0]); hn = max(np.linalg.norm(src[3]-src[0]), np.linalg.norm(src[2]-src[1]))
+        if hn>5000 or wn>5000 or hn<=0 or wn<=0: return None, None
+        pw, ph = int(wn*0.05), int(hn*0.2)
+        dst = np.array([[pw, ph], [wn+pw, ph], [wn+pw, hn+ph], [pw, hn+ph]], dtype="float32")
+        try: return src.astype(int), cv2.warpPerspective(image, cv2.getPerspectiveTransform(src, dst), (int(wn+pw*2), int(hn+ph*2)), flags=cv2.INTER_CUBIC, borderValue=(255,255,255))
+        except: return None, None
 
     # ------------------------------------------------------------------
     # REGEX PRE-EXTRACTION (ADDRESS + PHONE)
@@ -390,107 +365,113 @@ class OCRBackend:
     def regex_pre_extract(self, texts):
         extracted = {"ADDRESS": [], "PHONE": []}
         remaining_texts = []
-
+        
         if not texts:
             return extracted, remaining_texts
+            
+        all_y = []
+        all_h = []
+        for t in texts:
+            pts = t['box_points'].reshape(-1, 2)
+            min_y, max_y = np.min(pts[:, 1]), np.max(pts[:, 1])
+            all_y.append(max_y)
+            all_h.append(max_y - min_y)
+            
+        global_max_y = max(all_y) if all_y else 1   
+        global_max_h = max(all_h) if all_h else 1   
+        
+        first_addr_h = None 
+        
+        phone_prefixes = r'(?:điện thoại(?: liên hệ| di động)?|di động|dđ|tổng đài|cskh|chăm sóc khách hàng|tel|hotline|sđt|sdt|đt|phone|zalo|call|liên hệ|mobi|fax)'
+        addr_prefixes = r'(?:đ[iị]a ch[iỉ](?:\s*(?:đkkd|đăng ký kinh doanh|liên hệ|giao dịch))?|đ/c|đc|add(?:ress)?|trụ sở(?: chính)?|cơ sở\s*\d+|chi nhánh\s*\d+|cn[\.\s]*\d+)'        
+        phone_pattern = re.compile(rf'(?i)(?:{phone_prefixes}\s*[:\-\.]?\s*)?((?:\+84|0|1800|1900|\(\s*\d{{2,5}}\s*\))(?:(?!\s*[\-,\./]\s*(?:\+84|0|1800|1900)(?:[\s\.\-]*\d){{7}})[ \-\.\d]){{4,15}})(?=\b|[^\d])')
 
-        all_y = [np.max(t['box_points'].reshape(-1, 2)[:, 1]) for t in texts]
-        all_h = [
-            np.max(t['box_points'].reshape(-1, 2)[:, 1]) - np.min(t['box_points'].reshape(-1, 2)[:, 1])
-            for t in texts
-        ]
-        global_max_y = max(all_y) if all_y else 1
-        global_max_h = max(all_h) if all_h else 1
-        first_addr_h = None
-
-        phone_prefixes  = r'(?:điện thoại(?: liên hệ| di động)?|di động|dđ|tổng đài|cskh|chăm sóc khách hàng|tel|hotline|sđt|sdt|đt|phone|zalo|call|liên hệ|mobi|fax)'
-        addr_prefixes   = r'(?:đ[iị]a ch[iỉ](?:\s*(?:đkkd|đăng ký kinh doanh|liên hệ|giao dịch))?|đ/c|đc|add(?:ress)?|trụ sở(?: chính)?|cơ sở\s*\d+|chi nhánh\s*\d+|cn\s*\d+)'
-        phone_pattern   = re.compile(
-            rf'(?i)(?:{phone_prefixes}\s*[:\-\.]?\s*)?((?:\+84|0|1800|1900|\(\s*\d{{2,5}}\s*\))(?:(?!\s*[-\.]\s*(?:\+84|0|1800|1900))[ \-\.\d]){{4,15}})(?=\b|[^\d])'
-        )
-        addr_admin_kw   = re.compile(
-            r'\b(phường|quận|huyện|tỉnh|thành phố|thị xã|thị trấn|tp\.|q\.|p\.|tx\.|h\.|khu phố|kp\.|thôn|ấp|đường|quốc lộ|ql\d*|đại lộ|khu vực|kv|ninh kiều|bình thủy|cái răng|ô môn|thốt nốt|phong điền|cờ đỏ|thới lai|vĩnh thạnh)\b',
-            re.IGNORECASE
-        )
-        short_addr_pat  = re.compile(
-            r'^\s*(?:số|lô|kiot|ki-ốt|quầy|tầng|lầu\s+)?(?:[a-zA-Z]+\d+|\d+[a-zA-Z]*)(?:/\d{1,4}[a-zA-Z]?)?\s+[^\W\d_]+\s+[^\W\d_]+',
-            re.IGNORECASE
-        )
-        addr_prefix_pat = re.compile(rf'(?i)^{addr_prefixes}\s*[:\-]*\s*')
-        exclude_pat     = re.compile(
-            r'^(?:công ty|cty|dntn|doanh nghiệp|nhà thuốc|siêu thị|tạp hóa|trái cây|cửa hàng|đại lý|quán|nhà hàng|trung tâm|bệnh viện|trường|salon|spa|chuyên|phòng khám|shop|store|gara|garage|hotel|khách sạn|nhà nghỉ|văn phòng|vpgd|showroom|kho|xưởng|ủy ban|ubnd|sở|ban|bộ|ngân hàng|doanh trại|tiệm|htx|nha khoa|răng hàm mặt|thẩm mỹ|viện|trạm|chợ|bánh mì|bánh tráng|cơ sở|tòa án|công an|chi cục|tổng cục|đài|nhà văn hóa|đảng bộ|chi bộ|hội đồng|đoàn)\b',
-            re.IGNORECASE
-        )
+        addr_admin_keywords = re.compile(r'\b(phường|quận|huyện|tỉnh|thành phố|thị xã|thị trấn|tp\.|q\.|p\.|tx\.|h\.|khu phố|kp\.|thôn|ấp|đường|quốc lộ|ql\d*|đại lộ|khu vực|kv|ninh kiều|bình thủy|cái răng|ô môn|thốt nốt|phong điền|cờ đỏ|thới lai|vĩnh thạnh)\b', re.IGNORECASE)
+        short_addr_pattern = re.compile(r'^\s*(?:số|lô|kiot|ki-ốt|quầy|tầng|lầu\s+)?(?:[a-zA-Z]+\d+|\d+[a-zA-Z]*)(?:/\d{1,4}[a-zA-Z]?)?\s+[^\W\d_]+\s+[^\W\d_]+', re.IGNORECASE)
+        
+        addr_prefix_pattern = re.compile(rf'(?i)^{addr_prefixes}\s*[:\-]*\s*')
+        exclude_pattern = re.compile(r'^(?:công ty|cty|dntn|doanh nghiệp|nhà thuốc|siêu thị|tạp hóa|trái cây|cửa hàng|đại lý|quán|nhà hàng|trung tâm|bệnh viện|trường|salon|spa|chuyên|phòng khám|shop|store|gara|garage|hotel|khách sạn|nhà nghỉ|văn phòng|vpgd|showroom|kho|xưởng|ủy ban|ubnd|sở|ban|bộ|ngân hàng|doanh trại|tiệm|htx|nha khoa|răng hàm mặt|thẩm mỹ|viện|trạm|chợ|bánh mì|bánh tráng|cơ sở|tòa án|công an|chi cục|tổng cục|đài|nhà văn hóa|đảng bộ|chi bộ|hội đồng|đoàn)\b', re.IGNORECASE)        
+        remove_prefix_pattern = re.compile(r'(?i)^(?:đ[iị]a ch[iỉ](?:\s*(?:đkkd|đăng ký kinh doanh|liên hệ|giao dịch))?|đ/c|đc|add(?:ress)?)\s*[:\-]*\s*')
 
         for text_info in texts:
             current_text = text_info['text'].strip()
-            box_coords   = text_info['box_points']
-            pts          = box_coords.reshape(-1, 2)
-            box_h        = np.max(pts[:, 1]) - np.min(pts[:, 1])
+            box_coords = text_info['box_points']
+            
+            pts = box_coords.reshape(-1, 2)
+            box_h = np.max(pts[:, 1]) - np.min(pts[:, 1])
             box_y_center = (np.min(pts[:, 1]) + np.max(pts[:, 1])) / 2
-
-            for match in list(phone_pattern.finditer(current_text)):
+            
+            matches = list(phone_pattern.finditer(current_text))
+            for match in matches:
                 full_match_str = match.group(0)
-                raw_phone      = match.group(1)
-                has_prefix     = bool(re.search(rf'(?i){phone_prefixes}', full_match_str))
-                clean_digits   = re.sub(r'[^\d+]', '', raw_phone)
-                if len(clean_digits) < 8 and not has_prefix:
-                    continue
+                raw_phone = match.group(1)
+                has_phone_prefix = bool(re.search(rf'(?i){phone_prefixes}', full_match_str))
+                clean_digits = re.sub(r'[^\d+]', '', raw_phone)
+                
+                if len(clean_digits) < 8 and not has_phone_prefix:
+                    continue 
                 extracted["PHONE"].append(clean_digits)
                 current_text = current_text.replace(full_match_str, '').strip()
-
+                
             current_text = re.sub(rf'(?i)^{phone_prefixes}?\s*[:\-\.]*\s*$', '', current_text).strip()
+            
             if not current_text:
-                continue
-
-            is_addr       = False
-            has_addr_pre  = bool(addr_prefix_pat.search(current_text))
-            if has_addr_pre:
+                continue 
+                
+            is_addr = False
+            has_addr_prefix = bool(addr_prefix_pattern.search(current_text))
+            
+            if has_addr_prefix: 
                 is_addr = True
-            elif short_addr_pat.search(current_text):
+            elif short_addr_pattern.search(current_text): 
                 is_addr = True
-            elif addr_admin_kw.search(current_text):
-                has_number      = bool(re.search(r'\d', current_text))
-                has_comma       = ',' in current_text
-                admin_matches   = len(addr_admin_kw.findall(current_text))
-                is_small_text   = box_h <= global_max_h * 0.6
-                is_bottom_half  = box_y_center >= global_max_y * 0.5
-                if (has_number or has_comma or admin_matches >= 2) and (is_small_text or is_bottom_half):
+            elif addr_admin_keywords.search(current_text):
+                has_number = bool(re.search(r'\d', current_text))
+                has_comma = ',' in current_text
+                admin_matches = len(addr_admin_keywords.findall(current_text))
+                
+                has_province_or_city = bool(re.search(r'\b(tỉnh|thành phố|tp\.)\b', current_text, re.IGNORECASE))
+                
+                is_small_text = box_h <= global_max_h * 0.6
+                is_bottom_half = box_y_center >= global_max_y * 0.5
+                
+                if (has_number or has_comma or admin_matches >= 2 or has_province_or_city) and (is_small_text or is_bottom_half):
                     is_addr = True
-
-            if is_addr and not has_addr_pre and first_addr_h is not None:
+                    
+            if is_addr and not has_addr_prefix and first_addr_h is not None:
                 if box_h > first_addr_h * 1.8 or box_h < first_addr_h * 0.5:
-                    is_addr = False
-
-            if exclude_pat.search(current_text) and not has_addr_pre:
+                    is_addr = False 
+                    
+            if exclude_pattern.search(current_text) and not has_addr_prefix: 
                 is_addr = False
 
             if is_addr:
                 if first_addr_h is None:
-                    first_addr_h = box_h
-                clean_addr = addr_prefix_pat.sub('', current_text).strip()
+                    first_addr_h = box_h 
+                    
+                clean_addr = remove_prefix_pattern.sub('', current_text).strip()
                 clean_addr = re.sub(rf'(?i)(?:{phone_prefixes}).*$', '', clean_addr).strip(' ,.-')
-                if clean_addr:
-                    extracted["ADDRESS"].append(clean_addr)
+                
+                clean_addr = re.sub(r'(?i)^(cn[\.\s]*\d+|cơ sở\s*\d+|chi nhánh\s*\d+)\s*[:\-]+\s*', r'\1: ', clean_addr)
+                
+                if clean_addr: extracted["ADDRESS"].append(clean_addr)
             else:
                 remaining_texts.append({'text': current_text, 'box_points': box_coords})
-
+        
         if extracted["ADDRESS"]:
             final_addrs = []
             for addr in extracted["ADDRESS"]:
-                is_dup = False
+                is_duplicate = False
                 for i, existing in enumerate(final_addrs):
                     if addr.lower() in existing.lower():
-                        is_dup = True
-                        break
+                        is_duplicate = True; break
                     elif existing.lower() in addr.lower():
                         final_addrs[i] = addr
-                        is_dup = True
-                        break
-                if not is_dup:
-                    final_addrs.append(addr)
+                        is_duplicate = True; break
+                if not is_duplicate:
+                    final_addrs.append(addr) 
             extracted["ADDRESS"] = [", ".join(final_addrs)]
-
+            
         extracted["PHONE"] = list(dict.fromkeys(extracted["PHONE"]))
         return extracted, remaining_texts
 
@@ -583,10 +564,9 @@ class OCRBackend:
         flat_sign = self.rectify_whole_sign(sign_enhanced)
 
         # Step 3 – PaddleOCR detection
-        det_input = self.balance_local_illumination(flat_sign)
         valid_boxes = [
-            b for b in self.detect_robust(det_input)
-            if (np.max(b[:, 1]) - np.min(b[:, 1])) > max(12, int(flat_sign.shape[0] * 0.04))
+            b for b in self.detect_robust(flat_sign)
+            if (np.max(b[:, 1]) - np.min(b[:, 1])) > max(15, int(flat_sign.shape[0] * 0.015))
         ]
         lines = self.fit_line_and_group(valid_boxes)
 

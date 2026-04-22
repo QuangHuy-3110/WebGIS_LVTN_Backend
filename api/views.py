@@ -192,6 +192,7 @@ class ExtractGPSView(APIView):
         try:
             img = Image.open(image_file)
             exif_data = img._getexif()
+
         except Exception:
             return Response({"error": "Không thể đọc file ảnh. Hãy thử với file JPG/JPEG."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -219,7 +220,7 @@ class ExtractGPSView(APIView):
         lat_ref  = gps_info.get('GPSLatitudeRef')
         lng_dms  = gps_info.get('GPSLongitude')
         lng_ref  = gps_info.get('GPSLongitudeRef')
-
+        
         if not all([lat_dms, lat_ref, lng_dms, lng_ref]):
             return Response({"error": "Dữ liệu GPS không đầy đủ trong ảnh."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 

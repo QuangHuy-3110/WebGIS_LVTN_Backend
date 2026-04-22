@@ -372,30 +372,40 @@ def a_star_solver(graph, start, end, nodes_coords):
     return None
 
 def slice_geometry(full_geom, split_point, target_node_coords):
-
     coords = full_geom['coordinates']
-    best_idx = 0
-    min_dist = float('inf')
     px, py = split_point
+    
+    # 1. Tìm segment chứa split_point
+    segment_idx = 0
+    min_dist = float('inf')
+    
     for i in range(len(coords) - 1):
         p1 = coords[i]
         p2 = coords[i+1]
-        d1 = (p1[0]-px)**2 + (p1[1]-py)**2
-        d2 = (p2[0]-px)**2 + (p2[1]-py)**2
-        if d1 < min_dist: 
-            min_dist = d1
-            best_idx = i
-        if d2 < min_dist:
-            min_dist = d2
-            best_idx = i + 1
+        
+        # Khoảng cách từ split_point tới segment p1-p2
+        proj, r = get_projection_point((px, py), p1, p2)
+        d = (px - proj[0])**2 + (py - proj[1])**2
+        if d < min_dist:
+            min_dist = d
+            segment_idx = i
+
     start_dist = (coords[0][0] - target_node_coords[0])**2 + (coords[0][1] - target_node_coords[1])**2
     end_dist = (coords[-1][0] - target_node_coords[0])**2 + (coords[-1][1] - target_node_coords[1])**2
+    
     sliced_coords = []
+    
     if start_dist < end_dist:
-        sliced_coords = coords[:best_idx+1] + [split_point]
-        sliced_coords = sliced_coords[::-1] 
+        # Hướng về node đầu (coords[0])
+        sliced_coords = [(px, py)]
+        for i in range(segment_idx, -1, -1):
+            sliced_coords.append(coords[i])
     else:
-        sliced_coords = [split_point] + coords[best_idx:]
+        # Hướng về node cuối (coords[-1])
+        sliced_coords = [(px, py)]
+        for i in range(segment_idx + 1, len(coords)):
+            sliced_coords.append(coords[i])
+            
     return {
         "type": "LineString",
         "coordinates": sliced_coords

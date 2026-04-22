@@ -16,6 +16,14 @@ window._signData = {
 };
 
 
+window.getBlueIcon = function() {
+    return L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+    });
+};
+
 window.updateLocationInput = function (lat, lng) {
     var el = document.querySelector('#id_location');
     if (el) el.value = 'SRID=4326;POINT(' + lng + ' ' + lat + ')';
@@ -26,6 +34,7 @@ window.setupExistingMarker = function (map) {
     map.eachLayer(function (layer) {
         if (layer instanceof L.Marker) {
             window.currentMarker = layer;
+            window.currentMarker.setIcon(window.getBlueIcon());
             window.currentMarker.setZIndexOffset(2000);
             if (window.currentMarker.dragging) {
                 window.currentMarker.dragging.enable();
@@ -46,14 +55,13 @@ window.updateMapMarker = function (lat, lng) {
     if (window.currentMarker) {
         window.globalLeafletMap.removeLayer(window.currentMarker);
     } else {
-        // Fallback in case currentMarker wasn't caught, try to find and remove default marker without touching existingStoresLayer
         window.globalLeafletMap.eachLayer(function (layer) {
             if (layer instanceof L.Marker && (!window.existingStoresLayer || !window.existingStoresLayer.hasLayer(layer))) {
                 window.globalLeafletMap.removeLayer(layer);
             }
         });
     }
-    window.currentMarker = L.marker(latlng, { draggable: true, zIndexOffset: 2000 }).addTo(window.globalLeafletMap);
+    window.currentMarker = L.marker(latlng, { icon: window.getBlueIcon(), draggable: true, zIndexOffset: 2000 }).addTo(window.globalLeafletMap);
     window.currentMarker.on('dragend', function (event) {
         var position = event.target.getLatLng();
         window.updateLocationInput(position.lat, position.lng);
@@ -115,10 +123,22 @@ window.loadExistingStores = function (map) {
             });
 
             window.existingStoresLayer = L.geoJSON(data, {
+                filter: function (feature) {
+                    if (window.currentMarker && feature.geometry && feature.geometry.coordinates) {
+                        var pos = window.currentMarker.getLatLng();
+                        var fLat = feature.geometry.coordinates[1];
+                        var fLng = feature.geometry.coordinates[0];
+                        if (Math.abs(pos.lat - fLat) < 0.00001 && Math.abs(pos.lng - fLng) < 0.00001) {
+                            return false; // Ẩn marker xám nếu trùng điểm xanh dương hiện tại
+                        }
+                    }
+                    return true;
+                },
                 pointToLayer: function (feature, latlng) {
                     return L.marker(latlng, {
                         icon: existingStoreIcon,
-                        title: feature.properties.name || 'Cửa hàng đã tồn tại'
+                        title: feature.properties.name || 'Cửa hàng đã tồn tại',
+                        zIndexOffset: -100 // Đẩy marker xám chìm xuống dưới
                     });
                 },
                 onEachFeature: function (feature, layer) {
